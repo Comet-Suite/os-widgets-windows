@@ -1,0 +1,59 @@
+name: Windows release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    timeout-minutes: 35
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          architecture: "x64"
+          cache: "pip"
+
+      - name: Validate Python source
+        shell: pwsh
+        run: python -m py_compile os_widgets.py
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --no-progress -y
+
+      - name: Build installer and portable package
+        shell: pwsh
+        run: ./packaging/build-windows.ps1
+
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: OS-Widgets-${{ github.ref_name }}-Windows-x64
+          path: release/*
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Create GitHub pre-release
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $assets = Get-ChildItem release -File | ForEach-Object { $_.FullName }
+          gh release create "${{ github.ref_name }}" $assets `
+            --title "OS Widgets 1.2.0 RC8" `
+            --notes-file RELEASE_NOTES.md `
+            --prerelease `
+            --verify-tag

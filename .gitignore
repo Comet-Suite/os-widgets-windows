@@ -4,6 +4,10 @@ __pycache__/
 .venv/
 venv/
 .env
+build/
+dist/
+release/
+portable/
 .DS_Store
 Thumbs.db
 desktop.ini
