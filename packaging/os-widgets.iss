@@ -34,7 +34,7 @@ VersionInfoVersion=1.2.0.8
 VersionInfoCompany={#MyAppPublisher}
 VersionInfoDescription=OS Widgets Windows installer
 VersionInfoProductName={#MyAppName}
-VersionInfoProductVersion={#MyAppVersion}
+VersionInfoProductVersion=1.2.0.8
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
