@@ -1,11 +1,13 @@
 # -*- mode: python ; coding: utf-8 -*-
+from pathlib import Path
 from PyInstaller.utils.hooks import collect_all, collect_data_files
 
+ROOT = Path(SPECPATH).parent
 qta_datas, qta_binaries, qta_hidden = collect_all('qtawesome')
 tz_datas = collect_data_files('tzdata')
 
 a = Analysis(
-    ['os_widgets.py'],
+    [str(ROOT / 'os_widgets.py')],
     pathex=[],
     binaries=qta_binaries,
     datas=qta_datas + tz_datas,
@@ -37,6 +39,6 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon='assets/os-widgets.ico',
-    version='packaging/version_info.txt',
+    icon=str(ROOT / 'assets' / 'os-widgets.ico'),
+    version=str(ROOT / 'packaging' / 'version_info.txt'),
 )
