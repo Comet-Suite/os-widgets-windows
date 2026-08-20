@@ -25,11 +25,16 @@ The executable is currently unsigned. Windows may display a reputation warning.
 "@ | Set-Content (Join-Path $Portable "START-HERE.txt") -Encoding UTF8
 Compress-Archive -Path "$Portable/*" -DestinationPath "$Release/OS-Widgets-$Version-Windows-x64-Portable.zip" -CompressionLevel Optimal -Force
 
-$iscc = @(
-  "$env:ProgramFiles(x86)\Inno Setup 6\ISCC.exe",
-  "$env:ProgramFiles\Inno Setup 6\ISCC.exe"
-) | Where-Object { Test-Path $_ } | Select-Object -First 1
-if (-not $iscc) { throw "Inno Setup 6 was not found." }
+$isccCommand = Get-Command "ISCC.exe" -ErrorAction SilentlyContinue
+$iscc = if ($isccCommand) { $isccCommand.Source } else {
+  @(
+    (Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6\ISCC.exe"),
+    (Join-Path $env:ProgramFiles "Inno Setup 6\ISCC.exe"),
+    "C:\ProgramData\chocolatey\bin\ISCC.exe"
+  ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+}
+if (-not $iscc) { throw "Inno Setup 6 compiler (ISCC.exe) was not found." }
+Write-Host "Using Inno Setup compiler: $iscc"
 & $iscc "packaging/os-widgets.iss"
 
 $Assets = Get-ChildItem $Release -File | Sort-Object Name
