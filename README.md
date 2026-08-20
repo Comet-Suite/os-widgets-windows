@@ -12,7 +12,7 @@
 
 A polished, resource-conscious desktop widget suite for Windows—delivered as one Python application file, with professional installer and portable builds.
 
-[**Download for Windows**](https://github.com/Comet-Suite/os-widgets-windows/releases) · [Features](#features) · [Run from source](#run-from-source) · [Report an issue](https://github.com/Comet-Suite/os-widgets-windows/issues)
+[**Download for Windows**](https://github.com/Comet-Suite/os-widgets-windows/releases) · [Wallpapers](#official-wallpapers) · [Features](#features) · [Run from source](#run-from-source) · [Report an issue](https://github.com/Comet-Suite/os-widgets-windows/issues)
 
 </div>
 
@@ -31,6 +31,21 @@ A polished, resource-conscious desktop widget suite for Windows—delivered as o
 <br>
 <img src="docs/screenshots/rc8-gallery.jpg" alt="Complete OS Widgets RC8 screenshot gallery" width="100%">
 </details>
+
+## Official wallpapers
+
+<div align="center">
+  <img src="wallpapers/os-widgets-wallpapers-preview.jpg" alt="OS Widgets dark and light wallpaper collection" width="86%">
+</div>
+
+The repository includes matching **dark and light wallpapers** for desktop and portrait displays.
+
+| Theme | Desktop 4K · 3840 × 2160 | Portrait · 2160 × 3840 |
+|---|---|---|
+| **Dark** | [Download desktop](wallpapers/os-widgets-dark-16x9-4k.jpg) | [Download portrait](wallpapers/os-widgets-dark-9x16-portrait.jpg) |
+| **Light** | [Download desktop](wallpapers/os-widgets-light-16x9-4k.jpg) | [Download portrait](wallpapers/os-widgets-light-9x16-portrait.jpg) |
+
+[Open the complete wallpaper collection →](wallpapers/README.md)
 
 ## Why OS Widgets?
 
@@ -188,6 +203,7 @@ packaging/                    PyInstaller and Inno Setup definitions
 .github/workflows/            Reproducible Windows release workflow
 docs/screenshots/             Visual evidence
 docs/test-results/            Automated test evidence
+wallpapers/                    Dark/light desktop and portrait wallpapers
 motivational-quotes.txt       Human-readable built-in quote list
 ```
 
