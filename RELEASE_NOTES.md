@@ -2,6 +2,19 @@
 
 A polished release candidate for Windows 10 and Windows 11.
 
+## Release status
+
+| Check | Result |
+|---|---|
+| Windows x64 build | **✅ Passing** |
+| Installer and portable packages | **✅ Published** |
+| Published SHA-256 checksums | **✅ Verified** |
+| RC8 functional test suite | **✅ 14/14 passed** |
+
+[View the successful Windows build](https://github.com/Comet-Suite/os-widgets-windows/actions/runs/32405047343)
+
+![OS Widgets screenshot showcase](https://raw.githubusercontent.com/Comet-Suite/os-widgets-windows/main/docs/screenshots/os-widgets-showcase.gif)
+
 ## New in RC8
 
 - Calendar widget with month navigation, today highlighting, selected-date state, and task indicator dots

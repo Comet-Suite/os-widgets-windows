@@ -5,6 +5,7 @@
 <div align="center">
 
 [![Windows release](https://github.com/Comet-Suite/os-widgets-windows/actions/workflows/windows-release.yml/badge.svg)](https://github.com/Comet-Suite/os-widgets-windows/actions/workflows/windows-release.yml)
+[![RC8 release](https://img.shields.io/badge/RC8%20release-PASSING-2ea44f?logo=githubactions&logoColor=white)](https://github.com/Comet-Suite/os-widgets-windows/actions/runs/32405047343)
 [![Latest release](https://img.shields.io/github/v/release/Comet-Suite/os-widgets-windows?include_prereleases&label=release&color=2490ee)](https://github.com/Comet-Suite/os-widgets-windows/releases)
 [![Windows 10/11](https://img.shields.io/badge/Windows-10%20%7C%2011-2490ee?logo=windows11&logoColor=white)](#system-requirements)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)](#run-from-source)
@@ -17,7 +18,19 @@ A polished, resource-conscious desktop widget suite for Windows—delivered as o
 
 ---
 
-![OS Widgets RC8 gallery](docs/screenshots/rc8-gallery.jpg)
+## Screenshot showcase
+
+<div align="center">
+  <img src="docs/screenshots/os-widgets-showcase.gif" alt="Animated OS Widgets screenshot showcase" width="100%">
+  <br>
+  <sub>Animated product tour · Calendar · To-do · Quotes · Music Player · Goal Countdown</sub>
+</div>
+
+<details>
+<summary><strong>Open the complete static RC8 screenshot sheet</strong></summary>
+<br>
+<img src="docs/screenshots/rc8-gallery.jpg" alt="Complete OS Widgets RC8 screenshot gallery" width="100%">
+</details>
 
 ## Why OS Widgets?
 
@@ -46,6 +59,15 @@ Additional application features include performance alerts, custom warning sound
 ## Download for Windows
 
 Go to the [**Releases page**](https://github.com/Comet-Suite/os-widgets-windows/releases) and choose one of these x64 packages:
+
+| RC8 release check | Status |
+|---|---|
+| Windows x64 build | **✅ Passing** |
+| Installer and portable assets | **✅ Published** |
+| SHA-256 verification | **✅ Passed** |
+| RC8 functional checks | **✅ 14/14 passed** |
+
+[View the successful Windows build →](https://github.com/Comet-Suite/os-widgets-windows/actions/runs/32405047343)
 
 ### Installer — recommended
 
