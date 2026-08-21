@@ -45,7 +45,7 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      - name: Create GitHub pre-release
+      - name: Create GitHub release
         if: startsWith(github.ref, 'refs/tags/')
         shell: pwsh
         env:
@@ -53,7 +53,6 @@ jobs:
         run: |
           $assets = Get-ChildItem release -File | ForEach-Object { $_.FullName }
           gh release create "${{ github.ref_name }}" $assets `
-            --title "OS Widgets 1.2.0 RC8" `
+            --title "OS Widgets 1.2.0" `
             --notes-file RELEASE_NOTES.md `
-            --prerelease `
             --verify-tag

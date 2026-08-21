@@ -1,5 +1,5 @@
 #define MyAppName "OS Widgets"
-#define MyAppVersion "1.2.0-rc.8"
+#define MyAppVersion "1.2.0"
 #define MyAppPublisher "Comet Suite"
 #define MyAppURL "https://github.com/Comet-Suite/os-widgets-windows"
 #define MyAppExeName "OS-Widgets.exe"
@@ -30,11 +30,11 @@ ArchitecturesInstallIn64BitMode=x64compatible
 CloseApplications=yes
 RestartApplications=no
 MinVersion=10.0
-VersionInfoVersion=1.2.0.8
+VersionInfoVersion=1.2.0.0
 VersionInfoCompany={#MyAppPublisher}
 VersionInfoDescription=OS Widgets Windows installer
 VersionInfoProductName={#MyAppName}
-VersionInfoProductVersion=1.2.0.8
+VersionInfoProductVersion=1.2.0.0
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -47,6 +47,7 @@ Name: "autostart"; Description: "Start OS Widgets when I sign in"; GroupDescript
 Source: "..\dist\OS-Widgets.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\motivational-quotes.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\README.md"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\packaging\reset-on-next-launch"; DestDir: "{localappdata}\OS Widgets"; DestName: ".reset-on-next-launch"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\OS Widgets"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"

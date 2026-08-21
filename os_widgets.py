@@ -155,7 +155,8 @@ except ImportError:
 
 APP_NAME = "OS Widgets"
 TAGLINE = "Your desktop. Your widgets."
-APP_VERSION = "1.2.0-rc.8"
+APP_VERSION = "1.2.0"
+SETTINGS_SCHEMA_VERSION = 2
 IS_WINDOWS = sys.platform == "win32"
 
 
@@ -170,6 +171,7 @@ def app_data_dir() -> Path:
 
 
 SETTINGS_PATH = app_data_dir() / "settings.json"
+INSTALL_RESET_MARKER = app_data_dir() / ".reset-on-next-launch"
 NEWS_CACHE_PATH = app_data_dir() / "news_cache.json"
 NEWS_IMAGE_CACHE_DIR = app_data_dir() / "news_images"
 NEWS_IMAGE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -317,7 +319,7 @@ def clock_config(city: str, zone: str, variant: int) -> dict[str, Any]:
 
 def default_settings() -> dict[str, Any]:
     return {
-        "version": 1,
+        "version": SETTINGS_SCHEMA_VERSION,
         "appearance": {
             "theme": "system",
             "transparency": True,
@@ -434,11 +436,26 @@ def deep_merge(default: dict[str, Any], value: Any) -> dict[str, Any]:
 
 class SettingsStore:
     def __init__(self) -> None:
+        self.reset_on_load = False
         self.data = self.load()
+        if self.reset_on_load:
+            self.save()
 
     def load(self) -> dict[str, Any]:
+        # The installer places this one-shot marker so an installed build never
+        # inherits geometry, playlists or preferences from a source checkout.
+        if INSTALL_RESET_MARKER.exists():
+            self.reset_on_load = True
+            try:
+                INSTALL_RESET_MARKER.unlink()
+            except OSError:
+                pass
+            return default_settings()
         try:
             raw = json.loads(SETTINGS_PATH.read_text(encoding="utf-8"))
+            if int(raw.get("version", 0)) < SETTINGS_SCHEMA_VERSION:
+                self.reset_on_load = True
+                return default_settings()
             return deep_merge(default_settings(), raw)
         except Exception:
             return default_settings()
@@ -494,7 +511,6 @@ def palette_colors() -> dict[str, QColor]:
             "text": QColor(245, 247, 252),
             "muted": QColor(164, 172, 190),
             "border": QColor(255, 255, 255, 28),
-            "shadow": QColor(0, 0, 0, 100),
             "control": QColor(255, 255, 255, 18),
             "hover": QColor(255, 255, 255, 31),
         }
@@ -504,7 +520,6 @@ def palette_colors() -> dict[str, QColor]:
         "text": QColor(26, 31, 42),
         "muted": QColor(91, 101, 120),
         "border": QColor(17, 24, 39, 28),
-        "shadow": QColor(25, 35, 55, 55),
         "control": QColor(20, 30, 50, 12),
         "hover": QColor(20, 30, 50, 24),
     }
@@ -532,9 +547,8 @@ def widget_palette_colors() -> dict[str, QColor]:
     border = QColor(contrast); border.setAlpha(32)
     control = QColor(contrast); control.setAlpha(18)
     hover = QColor(contrast); hover.setAlpha(32)
-    shadow = QColor(0,0,0,95 if dark_surface else 48)
     surface2 = surface.lighter(112) if dark_surface else surface.darker(103)
-    return {"surface":surface,"surface2":surface2,"text":text,"muted":muted,"border":border,"shadow":shadow,"control":control,"hover":hover}
+    return {"surface":surface,"surface2":surface2,"text":text,"muted":muted,"border":border,"control":control,"hover":hover}
 
 
 def widget_corner_radius() -> int:
@@ -659,7 +673,14 @@ def app_stylesheet() -> str:
     return f"""
         QWidget {{ color: {fg}; font-family: "Segoe UI Variable", "Segoe UI", sans-serif; font-size: 13px; }}
         QDialog {{ background: {panel}; }}
+        QDialog#settingsDialog {{ background: {panel}; }}
         QLabel#muted {{ color: {muted}; }}
+        QLabel#pageTitle {{ color: {fg}; font-size: 21px; font-weight: 700; }}
+        QLabel#pageDescription {{ color: {muted}; font-size: 12px; }}
+        QLabel#versionBadge {{ color: {accent}; background: {'rgba(49,120,198,0.13)' if dark else 'rgba(49,120,198,0.09)'}; border: 1px solid {'rgba(88,166,255,0.28)' if dark else 'rgba(49,120,198,0.20)'}; border-radius: 10px; padding: 5px 10px; font-size: 10px; font-weight: 700; }}
+        QFrame#settingsNavPanel {{ background: {'#161A23' if dark else '#F0F3F8'}; border: 1px solid {border}; border-radius: 14px; }}
+        QFrame#pageIconTile {{ background: {'rgba(49,120,198,0.17)' if dark else 'rgba(49,120,198,0.10)'}; border: 1px solid {'rgba(88,166,255,0.25)' if dark else 'rgba(49,120,198,0.18)'}; border-radius: 11px; }}
+        QLabel#navSection {{ color: {muted}; font-size: 9px; font-weight: 700; letter-spacing: 1px; }}
         QFrame#settingsCard, QGroupBox {{ background: {raised}; border: 1px solid {border}; border-radius: 12px; }}
         QGroupBox {{ margin-top: 14px; padding: 15px 12px 12px 12px; font-weight: 600; }}
         QGroupBox::title {{ subcontrol-origin: margin; left: 12px; padding: 0 6px; }}
@@ -677,13 +698,18 @@ def app_stylesheet() -> str:
         QPushButton#primary {{ background: {accent}; color: white; border: none; font-weight: 600; }}
         QPushButton#primary:hover {{ background: {accent_hover}; }}
         QListWidget {{ background: transparent; border: none; outline: none; padding: 4px; }}
-        QListWidget::item {{ padding: 10px 12px; border-radius: 8px; margin: 2px 0; }}
+        QListWidget::item {{ min-height: 24px; padding: 9px 11px; border-radius: 9px; margin: 2px 0; }}
         QListWidget::item:hover {{ background: {hover}; }}
         QListWidget::item:selected {{ background: {accent}; color: white; }}
         QScrollArea {{ background: transparent; border: none; }}
-        QScrollBar:vertical {{ width: 8px; background: transparent; margin: 2px; }}
-        QScrollBar::handle:vertical {{ background: {'#4A5263' if dark else '#C3C9D5'}; border-radius: 4px; min-height: 28px; }}
-        QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
+        QScrollBar:vertical {{ width: 12px; background: {'rgba(255,255,255,0.025)' if dark else 'rgba(20,30,50,0.035)'}; border: none; border-radius: 6px; margin: 3px 2px; }}
+        QScrollBar::handle:vertical {{ background: {'#535D70' if dark else '#B4BECD'}; border: 2px solid transparent; border-radius: 5px; min-height: 34px; }}
+        QScrollBar::handle:vertical:hover {{ background: {accent}; }}
+        QScrollBar:horizontal {{ height: 12px; background: {'rgba(255,255,255,0.025)' if dark else 'rgba(20,30,50,0.035)'}; border: none; border-radius: 6px; margin: 2px 3px; }}
+        QScrollBar::handle:horizontal {{ background: {'#535D70' if dark else '#B4BECD'}; border: 2px solid transparent; border-radius: 5px; min-width: 34px; }}
+        QScrollBar::handle:horizontal:hover {{ background: {accent}; }}
+        QScrollBar::add-line, QScrollBar::sub-line {{ width: 0; height: 0; border: none; background: transparent; }}
+        QScrollBar::add-page, QScrollBar::sub-page {{ background: transparent; }}
         QMenu {{ background: {raised}; color: {fg}; border: 1px solid {border}; border-radius: 8px; padding: 6px; }}
         QMenu::item {{ padding: 7px 28px 7px 12px; border-radius: 5px; }}
         QMenu::item:selected {{ background: {hover}; }}
@@ -937,11 +963,12 @@ class BaseWidget(QWidget):
         # Qt may deliver a geometry event while the base constructor is still
         # creating child controls, particularly with platform DPI plugins.
         if hasattr(self, "content"):
-            margin = 12
-            self.content.setGeometry(margin + 4, margin + 3, self.width() - 2 * margin - 8, self.height() - 2 * margin - 6)
-            right = self.width() - 17
-            self.menu_button.move(right - 28, 15)
-            self.refresh_button.move(right - 60, 15)
+            # Cards now use the full widget bounds; the old transparent outer
+            # gutter existed only to make room for a painted drop shadow.
+            self.content.setGeometry(8, 7, self.width() - 16, self.height() - 14)
+            right = self.width() - 5
+            self.menu_button.move(right - 28, 7)
+            self.refresh_button.move(right - 60, 7)
             self.pending_save.start()
         super().resizeEvent(event)
 
@@ -966,14 +993,8 @@ class BaseWidget(QWidget):
         radius = widget_corner_radius()
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        # Multi-pass, inexpensive soft shadow; avoids a GPU-heavy graphics effect.
-        for inset, alpha in ((2, 15), (4, 24), (7, 34)):
-            shadow = QColor(colors["shadow"])
-            shadow.setAlpha(alpha)
-            p.setPen(Qt.PenStyle.NoPen)
-            p.setBrush(shadow)
-            p.drawRoundedRect(self.rect().adjusted(8 - inset, 9 - inset, -8 + inset, -7 + inset), radius + 2, radius + 2)
-        card = self.rect().adjusted(10, 9, -10, -11)
+        # Flat card edge: no painted drop shadow or background halo.
+        card = self.rect().adjusted(2, 2, -2, -2)
         surface_top = QColor(colors["surface"]); surface_bottom = QColor(colors["surface"])
         surface_top = surface_top.lighter(112 if widget_dark else 103)
         surface_bottom = surface_bottom.darker(108 if widget_dark else 102)
@@ -1333,7 +1354,10 @@ class ClockWidget(BaseWidget):
         super().resizeEvent(event)
         if hasattr(self, "date_label"):
             self.date_label.setVisible(bool(self.config.get("show_date", True)) and self.height() >= 112)
-            self.zone_label.setVisible(self.width() >= 230)
+            # The UTC offset used to appear as distracting small print in two
+            # clock variants. Time-zone selection remains available in Settings,
+            # but the desktop clock now keeps that implementation detail hidden.
+            self.zone_label.hide()
 
     def settings_page(self) -> str:
         return "Clocks"
@@ -1393,12 +1417,10 @@ class ClockWidget(BaseWidget):
             self.kicker.setText(city.upper())
         self.date_label.setText(current.strftime("%A, %d %B %Y"))
         self.date_label.setVisible(bool(self.config.get("show_date", True)) and self.height() >= 112)
-        offset = current.utcoffset() or dt.timedelta(0)
-        hours = offset.total_seconds() / 3600
-        sign = "+" if hours >= 0 else "−"
-        abs_hours = abs(hours)
-        zone_text = f"UTC{sign}{int(abs_hours):02d}:{int(round((abs_hours % 1) * 60)):02d}"
-        self.zone_label.setText(zone_text)
+        # The configured time zone still drives the clock value; its raw UTC
+        # offset is deliberately not printed on the desktop card.
+        self.zone_label.clear()
+        self.zone_label.hide()
 
 
 class GPUPerformanceMonitor:
@@ -1614,9 +1636,120 @@ class SystemMonitor:
         return self.memory_details()[0]
 
     def disk_partitions(self) -> list[dict[str, Any]]:
-        """Return accurate usage for every mounted, readable storage partition."""
+        """Return mounted storage volumes using Windows' authoritative byte counters.
+
+        Windows is queried first so the occupied percentage matches Explorer's
+        ``total - total_free`` calculation.  psutil remains a portable fallback
+        for non-Windows hosts and unusual Windows environments.
+        """
         output: list[dict[str, Any]] = []
-        if psutil:
+
+        if IS_WINDOWS:
+            try:
+                kernel32 = ctypes.windll.kernel32
+                # Collect every logical drive exposed by Windows, then supplement
+                # it with any mounted-folder paths reported by psutil.
+                needed = int(kernel32.GetLogicalDriveStringsW(0, None))
+                size = max(needed + 2, 512)
+                buffer = ctypes.create_unicode_buffer(size)
+                copied = int(kernel32.GetLogicalDriveStringsW(size, buffer))
+                candidates: list[tuple[str, str]] = []
+                if copied:
+                    candidates.extend((path, path) for path in buffer[:copied].split("\x00") if path)
+                if psutil:
+                    try:
+                        for part in psutil.disk_partitions(all=True):
+                            mount = str(part.mountpoint or "").strip()
+                            if mount:
+                                candidates.append((mount, str(part.device or mount)))
+                    except Exception:
+                        pass
+
+                seen_mounts: set[str] = set()
+                seen_volumes: set[str] = set()
+                drive_types = {2: "Removable", 3: "Local disk", 4: "Network drive", 6: "RAM disk"}
+                system_drive = os.getenv("SystemDrive", "C:").lower().rstrip("\\/")
+                for raw_mount, device in candidates:
+                    mount = os.path.abspath(raw_mount) if not re.match(r"^[A-Za-z]:[\\/]?$", raw_mount) else raw_mount
+                    if re.match(r"^[A-Za-z]:[\\/]?$", mount):
+                        mount = mount[0].upper() + ":\\"
+                    elif not mount.endswith(("\\", "/")):
+                        mount += os.sep
+                    mount_key = mount.lower().rstrip("\\/") or mount.lower()
+                    if mount_key in seen_mounts:
+                        continue
+                    seen_mounts.add(mount_key)
+
+                    drive_type = int(kernel32.GetDriveTypeW(ctypes.c_wchar_p(mount)))
+                    # Unknown roots, missing media and optical drives are not
+                    # occupancy-bearing storage partitions.
+                    if drive_type in (0, 1, 5):
+                        continue
+
+                    available = ctypes.c_ulonglong()
+                    total = ctypes.c_ulonglong()
+                    total_free = ctypes.c_ulonglong()
+                    if not kernel32.GetDiskFreeSpaceExW(
+                        ctypes.c_wchar_p(mount), ctypes.byref(available),
+                        ctypes.byref(total), ctypes.byref(total_free),
+                    ) or total.value <= 0:
+                        continue
+
+                    volume_name = ctypes.create_unicode_buffer(261)
+                    volume_id = ""
+                    try:
+                        if kernel32.GetVolumeNameForVolumeMountPointW(
+                            ctypes.c_wchar_p(mount), volume_name, len(volume_name)
+                        ):
+                            volume_id = volume_name.value.lower()
+                    except Exception:
+                        volume_id = ""
+                    identity = volume_id or mount_key
+                    if identity in seen_volumes:
+                        continue
+                    seen_volumes.add(identity)
+
+                    label_buffer = ctypes.create_unicode_buffer(261)
+                    fs_buffer = ctypes.create_unicode_buffer(64)
+                    serial = ctypes.c_ulong()
+                    max_component = ctypes.c_ulong()
+                    flags = ctypes.c_ulong()
+                    try:
+                        kernel32.GetVolumeInformationW(
+                            ctypes.c_wchar_p(mount), label_buffer, len(label_buffer),
+                            ctypes.byref(serial), ctypes.byref(max_component), ctypes.byref(flags),
+                            fs_buffer, len(fs_buffer),
+                        )
+                    except Exception:
+                        pass
+
+                    total_bytes = int(total.value)
+                    free_bytes = min(total_bytes, int(total_free.value))
+                    used_bytes = max(0, total_bytes - free_bytes)
+                    percent = max(0.0, min(100.0, used_bytes * 100.0 / total_bytes))
+                    short_mount = mount.rstrip("\\/") or mount
+                    volume_label = label_buffer.value.strip()
+                    label = f"{short_mount} · {volume_label}" if volume_label else short_mount
+                    output.append({
+                        "id": identity,
+                        "device": device,
+                        "mount": mount,
+                        "label": label,
+                        "volume_label": volume_label,
+                        "fstype": fs_buffer.value.strip() or drive_types.get(drive_type, "Windows volume"),
+                        "drive_type": drive_types.get(drive_type, "Storage"),
+                        "total": total_bytes,
+                        "used": used_bytes,
+                        "free": free_bytes,
+                        "available": min(total_bytes, int(available.value)),
+                        "percent": percent,
+                        "source": "Windows volume API",
+                        "is_system": mount_key == system_drive,
+                    })
+            except Exception:
+                output = []
+
+        if not output and psutil:
             try:
                 seen: set[str] = set()
                 for part in psutil.disk_partitions(all=False):
@@ -1632,32 +1765,24 @@ class SystemMonitor:
                         continue
                     seen.add(key)
                     output.append({
+                        "id": key,
                         "device": str(part.device), "mount": mount,
                         "label": mount.rstrip("\\/") or mount,
                         "fstype": str(part.fstype or "Storage"),
+                        "drive_type": "Mounted volume",
                         "total": int(usage.total), "used": int(usage.used),
-                        "free": int(usage.free), "percent": float(usage.percent),
+                        "free": int(usage.free), "available": int(usage.free),
+                        "percent": max(0.0, min(100.0, float(usage.percent))),
+                        "source": "psutil",
+                        "is_system": mount == os.path.abspath(os.sep),
                     })
             except Exception:
                 output = []
-        if not output and IS_WINDOWS:
-            try:
-                buffer = ctypes.create_unicode_buffer(512)
-                ctypes.windll.kernel32.GetLogicalDriveStringsW(len(buffer), buffer)
-                for drive in [value for value in buffer[:].split("\x00") if value]:
-                    total = ctypes.c_ulonglong(); free = ctypes.c_ulonglong(); available = ctypes.c_ulonglong()
-                    if not ctypes.windll.kernel32.GetDiskFreeSpaceExW(drive, ctypes.byref(available), ctypes.byref(total), ctypes.byref(free)) or total.value <= 0:
-                        continue
-                    used = total.value - free.value
-                    output.append({
-                        "device": drive, "mount": drive, "label": drive.rstrip("\\"), "fstype": "Windows volume",
-                        "total": int(total.value), "used": int(used), "free": int(free.value),
-                        "percent": float(used * 100.0 / total.value),
-                    })
-            except Exception:
-                pass
-        system_drive = os.getenv("SystemDrive", "C:").lower().rstrip("\\/")
-        output.sort(key=lambda item: (0 if str(item["mount"]).lower().rstrip("\\/") == system_drive else 1, str(item["mount"]).lower()))
+
+        output.sort(key=lambda item: (
+            0 if item.get("is_system", False) else 1,
+            str(item.get("mount", "")).lower(),
+        ))
         return output
 
     def battery_status(self) -> Optional[dict[str, Any]]:
@@ -1890,7 +2015,7 @@ class DiskPartitionRow(QFrame):
         self.detail_label = QLabel(); self.detail_label.setObjectName("diskDetail")
         self.percent_label = QLabel(); self.percent_label.setObjectName("diskPercent")
         top.addWidget(self.name_label); top.addWidget(self.detail_label); top.addStretch(); top.addWidget(self.percent_label)
-        self.bar = QProgressBar(); self.bar.setRange(0,100); self.bar.setTextVisible(False); self.bar.setFixedHeight(6)
+        self.bar = QProgressBar(); self.bar.setRange(0,1000); self.bar.setTextVisible(False); self.bar.setFixedHeight(7)
         layout.addLayout(top); layout.addWidget(self.bar); self.apply_data(volume, accent)
 
     def apply_data(self, volume: dict[str, Any], accent: QColor) -> None:
@@ -1898,9 +2023,11 @@ class DiskPartitionRow(QFrame):
         label = str(volume.get("label") or volume.get("mount") or "Volume")
         fstype = str(volume.get("fstype") or "Storage")
         used = float(volume.get("used",0)); total = float(volume.get("total",0)); percent = float(volume.get("percent",0))
-        self.name_label.setText(label); self.detail_label.setText(f"{fstype}  ·  {format_storage(used)} of {format_storage(total)} used")
-        self.percent_label.setText(f"{percent:.0f}%"); self.bar.setValue(int(round(percent)))
-        self.setToolTip(f"{label}: {format_storage(used)} used, {format_storage(float(volume.get('free',0)))} free, {format_storage(total)} total")
+        free = float(volume.get("free",0)); drive_type = str(volume.get("drive_type") or "Storage")
+        self.name_label.setText(label); self.detail_label.setText(f"{fstype}  ·  {format_storage(used)} used  ·  {format_storage(free)} free")
+        self.percent_label.setText(f"{percent:.1f}%"); self.bar.setValue(int(round(percent * 10.0)))
+        source = str(volume.get("source") or "system storage API")
+        self.setToolTip(f"{label}\n{drive_type} · {fstype}\n{format_storage(used)} used · {format_storage(free)} free · {format_storage(total)} total\nMeasured with {source}")
         row_radius = max(2, widget_corner_radius() - 5)
         self.setStyleSheet(f"""
             QFrame#diskPartitionRow {{ background: rgba({colors['control'].red()},{colors['control'].green()},{colors['control'].blue()},34); border:1px solid {colors['border'].name(QColor.NameFormat.HexArgb)}; border-radius:{row_radius}px; }}
@@ -2047,12 +2174,18 @@ class CPUWidget(BaseWidget):
         return QColor(self.METRIC_COLORS[index])
 
     def update_disk_rows(self) -> None:
-        for row in self.disk_rows:
-            self.disk_layout.removeWidget(row); row.hide(); row.deleteLater()
-        self.disk_rows.clear()
-        for volume in self.disk_volumes:
-            row = DiskPartitionRow(volume, self.metric_color(4))
-            self.disk_layout.insertWidget(self.disk_layout.count()-1, row); self.disk_rows.append(row)
+        identities = [str(volume.get("id") or volume.get("mount") or volume.get("device")) for volume in self.disk_volumes]
+        current = [str(row.volume.get("id") or row.volume.get("mount") or row.volume.get("device")) for row in self.disk_rows]
+        if identities == current:
+            for row, volume in zip(self.disk_rows, self.disk_volumes):
+                row.apply_data(volume, self.metric_color(4))
+        else:
+            for row in self.disk_rows:
+                self.disk_layout.removeWidget(row); row.hide(); row.deleteLater()
+            self.disk_rows.clear()
+            for volume in self.disk_volumes:
+                row = DiskPartitionRow(volume, self.metric_color(4))
+                self.disk_layout.insertWidget(self.disk_layout.count()-1, row); self.disk_rows.append(row)
         self.disk_host.setMinimumHeight(max(1, len(self.disk_rows) * 67))
 
     def update_metric_icon(self) -> None:
@@ -2112,6 +2245,10 @@ class CPUWidget(BaseWidget):
         STORE.save()
         if self.metric_index == 1:
             self.request_gpu_name()
+        elif self.metric_index == 4:
+            # Force a fresh Windows volume query when the user opens Disks.
+            self.disk_counter = 30000
+            QTimer.singleShot(0, self.sample)
         self.apply_cpu_style(); self.apply_icons(); self.render_metric(); self.update()
 
     def request_gpu_name(self) -> None:
@@ -2152,7 +2289,8 @@ class CPUWidget(BaseWidget):
 
         interval = max(500, int(self.config.get("interval_ms", 2000)))
         self.disk_counter += interval
-        if self.disk_counter >= 10000 or not self.disk_volumes:
+        disk_refresh_ms = 5000 if self.metric_index == 4 else 30000
+        if self.disk_counter >= disk_refresh_ms or not self.disk_volumes:
             self.disk_counter = 0
             self.disk_volumes = self.monitor.disk_partitions()
             disk_percent = float(self.disk_volumes[0]["percent"]) if self.disk_volumes else 0.0
@@ -3340,8 +3478,9 @@ def run_windows_diagnostics(
     try:
         volumes = SystemMonitor().disk_partitions()
         if volumes:
-            detail = " · ".join(f"{item['label']} {float(item['percent']):.0f}% used ({format_storage(float(item['free']))} free)" for item in volumes)
-            result["disks"] = {"status": "pass", "detail": f"Detected {len(volumes)} readable partition(s): {detail}"}
+            detail = " · ".join(f"{item['label']} {float(item['percent']):.1f}% used ({format_storage(float(item['free']))} free)" for item in volumes)
+            source = "Windows volume API" if IS_WINDOWS else str(volumes[0].get("source","system storage API"))
+            result["disks"] = {"status": "pass", "detail": f"Detected {len(volumes)} readable partition(s) with {source}: {detail}"}
         else:
             result["disks"] = {"status": "warn", "detail": "No readable storage partitions were detected."}
     except Exception as exc:
@@ -3985,15 +4124,16 @@ class SettingsPanel(QDialog):
         self.diagnostics_bridge = DiagnosticsBridge(self)
         self.diagnostics_bridge.completed.connect(self.diagnostics_finished)
         self.setWindowTitle(f"{APP_NAME} Settings")
+        self.setObjectName("settingsDialog")
         self.setWindowIcon(make_app_icon())
         self.setWindowFlag(Qt.WindowType.Tool, True)
-        self.setMinimumSize(790, 610)
-        self.resize(860, 650)
+        self.setMinimumSize(860, 640)
+        self.resize(1040, 720)
         self.setStyleSheet(app_stylesheet())
 
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(22, 19, 22, 18)
-        outer.setSpacing(16)
+        outer.setContentsMargins(24, 20, 24, 18)
+        outer.setSpacing(17)
         header = QHBoxLayout()
         mark = QLabel()
         mark.setPixmap(make_app_icon(42).pixmap(42, 42))
@@ -4004,21 +4144,25 @@ class SettingsPanel(QDialog):
         tagline.setObjectName("muted")
         name_box.addWidget(name); name_box.addWidget(tagline)
         header.addWidget(mark); header.addLayout(name_box); header.addStretch()
-        version = QLabel(f"Version {APP_VERSION}")
-        version.setObjectName("muted")
+        version = QLabel(f"STABLE  ·  {APP_VERSION}")
+        version.setObjectName("versionBadge")
         header.addWidget(version)
         outer.addLayout(header)
 
-        body = QHBoxLayout(); body.setSpacing(18)
-        self.nav = QListWidget()
-        self.nav.setFixedWidth(168)
+        body = QHBoxLayout(); body.setSpacing(20)
+        nav_panel = QFrame(); nav_panel.setObjectName("settingsNavPanel"); nav_panel.setFixedWidth(194)
+        nav_layout = QVBoxLayout(nav_panel); nav_layout.setContentsMargins(10, 13, 10, 11); nav_layout.setSpacing(6)
+        nav_section = QLabel("CONTROL CENTER"); nav_section.setObjectName("navSection"); nav_layout.addWidget(nav_section)
+        self.nav = QListWidget(); self.nav.setIconSize(QSize(18,18)); self.nav.setSpacing(1)
         nav_icons = (
             "fa6s.table-cells-large", "fa6s.clock", "fa6s.gauge-high", "fa6s.music",
             "fa6s.flag-checkered", "fa6s.calendar-days", "fa6s.quote-left", "fa6s.newspaper", "fa6s.palette", "fa6s.gear", "fa6s.stethoscope",
         )
         for label, icon_name in zip(self.PAGES, nav_icons):
-            self.nav.addItem(QListWidgetItem(awesome_icon(icon_name), label))
-        body.addWidget(self.nav)
+            item = QListWidgetItem(awesome_icon(icon_name), label); item.setToolTip(f"Open {label} settings"); self.nav.addItem(item)
+        nav_layout.addWidget(self.nav,1)
+        local_note=QLabel("LOCAL · PRIVATE");local_note.setObjectName("navSection");local_note.setAlignment(Qt.AlignmentFlag.AlignCenter);nav_layout.addWidget(local_note)
+        body.addWidget(nav_panel)
         self.stack = QStackedWidget()
         body.addWidget(self.stack, 1)
         outer.addLayout(body, 1)
@@ -4037,8 +4181,8 @@ class SettingsPanel(QDialog):
         self.nav.currentRowChanged.connect(self.stack.setCurrentIndex)
         self.nav.currentRowChanged.connect(self.page_changed)
 
-        footer = QHBoxLayout()
-        footer.addStretch()
+        footer = QHBoxLayout(); footer.setSpacing(9)
+        footer_icon=QLabel();footer_icon.setPixmap(awesome_icon("fa6s.shield-halved",palette_colors()["muted"].name()).pixmap(13,13));footer_note=QLabel("Settings stay on this device");footer_note.setObjectName("muted");footer.addWidget(footer_icon);footer.addWidget(footer_note);footer.addStretch()
         cancel = QPushButton("Cancel")
         cancel.setIcon(awesome_icon("fa6s.xmark"))
         cancel.clicked.connect(self.reject)
@@ -4059,13 +4203,23 @@ class SettingsPanel(QDialog):
     def page_shell(self, title: str, description: str) -> tuple[QWidget, QVBoxLayout]:
         page = QWidget()
         layout = QVBoxLayout(page)
-        layout.setContentsMargins(3, 0, 8, 0)
-        layout.setSpacing(10)
-        heading = QLabel(title)
-        heading.setStyleSheet("font-size: 19px; font-weight: 650;")
-        sub = QLabel(description)
-        sub.setObjectName("muted"); sub.setWordWrap(True)
-        layout.addWidget(heading); layout.addWidget(sub)
+        layout.setContentsMargins(2, 0, 10, 0)
+        layout.setSpacing(12)
+        icon_map = {
+            "your widgets":"fa6s.table-cells-large", "clock widgets":"fa6s.clock", "system monitor":"fa6s.gauge-high",
+            "music player":"fa6s.music", "goal countdown":"fa6s.flag-checkered", "calendar and to-do":"fa6s.calendar-days",
+            "motivational quotes":"fa6s.quote-left", "news":"fa6s.newspaper", "appearance":"fa6s.palette",
+            "general":"fa6s.gear", "windows diagnostics":"fa6s.stethoscope",
+        }
+        header = QHBoxLayout(); header.setSpacing(12)
+        tile = QFrame(); tile.setObjectName("pageIconTile"); tile.setFixedSize(44,44)
+        tile_layout=QVBoxLayout(tile);tile_layout.setContentsMargins(0,0,0,0)
+        icon_label=QLabel();icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter);icon_label.setPixmap(awesome_icon(icon_map.get(title.lower(),"fa6s.sliders"),app_accent_color().name()).pixmap(20,20));tile_layout.addWidget(icon_label)
+        title_box=QVBoxLayout();title_box.setSpacing(2)
+        heading = QLabel(title); heading.setObjectName("pageTitle")
+        sub = QLabel(description); sub.setObjectName("pageDescription"); sub.setWordWrap(True)
+        title_box.addWidget(heading);title_box.addWidget(sub)
+        header.addWidget(tile);header.addLayout(title_box,1);layout.addLayout(header)
         return page, layout
 
     def build_widgets_page(self) -> QWidget:
@@ -4233,9 +4387,9 @@ class SettingsPanel(QDialog):
         card = QFrame(); card.setObjectName("settingsCard"); form = QGridLayout(card); form.setContentsMargins(18,16,18,16); form.setVerticalSpacing(12)
         self.music_files_label = QLabel(); self.music_files_label.setObjectName("muted"); self.music_files_label.setWordWrap(True)
         choose = QPushButton("Choose audio files…"); choose.setIcon(awesome_icon("fa6s.music")); choose.clicked.connect(self.choose_music_files)
-        clear = QPushButton("Clear playlist"); clear.clicked.connect(self.clear_music_files)
+        clear = QPushButton("Clear playlist"); clear.setIcon(awesome_icon("fa6s.trash-can")); clear.clicked.connect(self.clear_music_files)
         cover = QLineEdit(str(cfg.get("cover_image",""))); cover.setPlaceholderText("Optional JPG, PNG or WebP cover image")
-        browse_cover = QPushButton("Browse…"); browse_cover.clicked.connect(lambda: self.choose_image_file(cover,"Choose music cover"))
+        browse_cover = QPushButton("Browse…"); browse_cover.setIcon(awesome_icon("fa6s.image")); browse_cover.clicked.connect(lambda: self.choose_image_file(cover,"Choose music cover"))
         volume = QSpinBox(); volume.setRange(0,100); volume.setSuffix(" %"); volume.setValue(int(cfg.get("volume",70)))
         form.addWidget(QLabel("Playlist"),0,0); form.addWidget(self.music_files_label,0,1,1,2)
         buttons=QHBoxLayout(); buttons.addWidget(choose); buttons.addWidget(clear); buttons.addStretch(); form.addLayout(buttons,1,1,1,2)
@@ -4265,7 +4419,7 @@ class SettingsPanel(QDialog):
         try: py_target=dt.datetime.fromisoformat(str(cfg.get("target",""))); target.setDateTime(QDateTime.fromSecsSinceEpoch(int(py_target.timestamp())))
         except Exception: target.setDateTime(QDateTime.currentDateTime().addDays(30))
         image=QLineEdit(str(cfg.get("image_path",""))); image.setPlaceholderText("Optional JPG, PNG or WebP image")
-        browse=QPushButton("Browse…"); browse.clicked.connect(lambda: self.choose_image_file(image,"Choose goal image"))
+        browse=QPushButton("Browse…"); browse.setIcon(awesome_icon("fa6s.image")); browse.clicked.connect(lambda: self.choose_image_file(image,"Choose goal image"))
         completed=QLineEdit(str(cfg.get("completed_text","Goal reached"))); completed.setMaxLength(80)
         seconds=QCheckBox("Show seconds"); seconds.setChecked(bool(cfg.get("show_seconds",True)))
         form.addWidget(QLabel("Goal title"),0,0); form.addWidget(title,0,1,1,2)
@@ -4281,7 +4435,7 @@ class SettingsPanel(QDialog):
         cfg=self.draft["widgets"]["calendar"];card=QFrame();card.setObjectName("settingsCard");root=QVBoxLayout(card);root.setContentsMargins(18,16,18,16);root.setSpacing(10)
         add_row=QHBoxLayout();date=QDateEdit();date.setCalendarPopup(True);date.setDate(QDate.currentDate());task=QLineEdit();task.setPlaceholderText("New to-do item");add=QPushButton("Add task");add.setIcon(awesome_icon("fa6s.plus"));add.clicked.connect(lambda:self.add_calendar_todo(date,task));add_row.addWidget(date);add_row.addWidget(task,1);add_row.addWidget(add);root.addLayout(add_row)
         self.calendar_list=QListWidget();self.calendar_list.setMinimumHeight(220);root.addWidget(self.calendar_list,1)
-        actions=QHBoxLayout();done=QPushButton("Toggle completed");remove=QPushButton("Remove selected");done.clicked.connect(self.toggle_calendar_todo);remove.clicked.connect(self.remove_calendar_todo);show=QCheckBox("Show completed tasks on widget");show.setChecked(bool(cfg.get("show_completed",True)));actions.addWidget(done);actions.addWidget(remove);actions.addStretch();actions.addWidget(show);root.addLayout(actions)
+        actions=QHBoxLayout();done=QPushButton("Toggle completed");done.setIcon(awesome_icon("fa6s.circle-check"));remove=QPushButton("Remove selected");remove.setIcon(awesome_icon("fa6s.trash-can"));done.clicked.connect(self.toggle_calendar_todo);remove.clicked.connect(self.remove_calendar_todo);show=QCheckBox("Show completed tasks on widget");show.setChecked(bool(cfg.get("show_completed",True)));actions.addWidget(done);actions.addWidget(remove);actions.addStretch();actions.addWidget(show);root.addLayout(actions)
         self.controls["calendar:show_completed"]=show;self.refresh_calendar_list();layout.addWidget(card);layout.addStretch();return page
 
     def refresh_calendar_list(self) -> None:
@@ -4429,9 +4583,9 @@ class SettingsPanel(QDialog):
         top_layout = QVBoxLayout(top_group)
         behavior_note = QLabel("Always-on-top is configured independently from each widget’s hover menu. Unpinned widgets stay at desktop level, behind normal application windows.")
         behavior_note.setWordWrap(True); top_layout.addWidget(behavior_note)
-        button = QPushButton("Set all widgets always on top")
+        button = QPushButton("Set all widgets always on top"); button.setIcon(awesome_icon("fa6s.layer-group"))
         button.clicked.connect(lambda: self.set_all_top(True))
-        normal = QPushButton("Set all widgets to desktop level")
+        normal = QPushButton("Set all widgets to desktop level"); normal.setIcon(awesome_icon("fa6s.display"))
         normal.clicked.connect(lambda: self.set_all_top(False))
         line = QHBoxLayout(); line.addWidget(button); line.addWidget(normal); line.addStretch(); top_layout.addLayout(line)
         layout.addWidget(top_group); layout.addStretch()
@@ -4457,9 +4611,9 @@ class SettingsPanel(QDialog):
         layout.addWidget(card)
         reset_group = QGroupBox("Reset")
         reset_layout = QVBoxLayout(reset_group)
-        positions = QPushButton("Reset widget positions and sizes")
+        positions = QPushButton("Reset widget positions and sizes"); positions.setIcon(awesome_icon("fa6s.arrows-rotate"))
         positions.clicked.connect(self.reset_positions)
-        everything = QPushButton("Reset all settings")
+        everything = QPushButton("Reset all settings"); everything.setIcon(awesome_icon("fa6s.triangle-exclamation","#FF718B"))
         everything.clicked.connect(self.reset_everything)
         row = QHBoxLayout(); row.addWidget(positions); row.addWidget(everything); row.addStretch()
         reset_layout.addLayout(row)
@@ -5051,6 +5205,31 @@ def enable_windows_dpi_awareness() -> None:
             pass
 
 
+def package_self_test(expect_defaults: bool = False) -> int:
+    """Small, non-interactive check used by the Windows packaging workflow."""
+    try:
+        if APP_VERSION != "1.2.0" or SETTINGS_SCHEMA_VERSION != 2:
+            return 20
+        if expect_defaults:
+            defaults = default_settings()
+            if STORE.data.get("version") != SETTINGS_SCHEMA_VERSION:
+                return 21
+            for key in ("music", "goal", "calendar", "quotes"):
+                if STORE.data["widgets"][key].get("enabled") != defaults["widgets"][key]["enabled"]:
+                    return 22
+            if any(STORE.data["widgets"][key].get("geometry") is not None for key in STORE.data["widgets"]):
+                return 23
+        if IS_WINDOWS:
+            volumes = SystemMonitor().disk_partitions()
+            if not volumes or any(item.get("source") != "Windows volume API" for item in volumes):
+                return 24
+            if any(not (0.0 <= float(item["percent"]) <= 100.0) for item in volumes):
+                return 25
+        return 0
+    except Exception:
+        return 99
+
+
 def main() -> int:
     enable_windows_dpi_awareness()
     app = QApplication(sys.argv)
@@ -5062,6 +5241,9 @@ def main() -> int:
     app.setQuitOnLastWindowClosed(False)
     app.setStyle("Fusion")
     app.setStyleSheet(app_stylesheet())
+
+    if "--package-self-test" in sys.argv:
+        return package_self_test("--expect-defaults" in sys.argv)
 
     # A native lock file prevents duplicate background instances after login.
     lock_path = str(Path(tempfile.gettempdir()) / "os_widgets_instance.lock")
