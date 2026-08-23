@@ -12,6 +12,10 @@ This release adds an optional Windows Explorer file converter while keeping the 
 
 Enable it from **Settings → File Converter**. Supported file extensions receive an **OS Widgets** submenu in Windows Explorer with only the valid output formats for that source type. Converted files are saved in the source folder with collision-safe names.
 
+![File Converter settings](https://raw.githubusercontent.com/Comet-Suite/os-widgets-windows/main/docs/screenshots/file-converter-settings.png)
+
+![Format-aware context submenu](https://raw.githubusercontent.com/Comet-Suite/os-widgets-windows/main/docs/screenshots/context-menu-preview.png)
+
 ### Included formats
 
 - Images: PNG, JPEG, WebP, BMP, TIFF, GIF, ICO, PDF
