@@ -1,6 +1,6 @@
 $ErrorActionPreference = "Stop"
 $PSNativeCommandUseErrorActionPreference = $true
-$Version = "1.2.0"
+$Version = "1.3.0"
 $Root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 Set-Location $Root
 
@@ -24,6 +24,18 @@ try {
   if (Test-Path (Join-Path $SmokeState ".reset-on-next-launch")) { throw "Reset marker was not consumed." }
   $Saved = Get-Content (Join-Path $SmokeState "settings.json") -Raw | ConvertFrom-Json
   if ($Saved.widgets.music.enabled -or $Saved.widgets.music.playlist.Count -ne 0) { throw "Installer reset state was not saved." }
+  if ($Saved.general.file_converter_enabled) { throw "File Converter must be disabled in the default state." }
+
+  $ConverterTest = Join-Path $SmokeRoot "converter"
+  $Process = Start-Process -FilePath "dist/OS-Widgets.exe" -ArgumentList "--converter-package-self-test",$ConverterTest -Wait -PassThru
+  if ($Process.ExitCode -ne 0) { throw "Packaged converter self-test failed with exit code $($Process.ExitCode)." }
+  foreach ($Name in @("converter-test.jpg","converter-test.pdf","converter-test.docx","converter-test.xlsx","converter-test.json","converter-test.mp3")) {
+    $Output = Join-Path $ConverterTest $Name
+    if (-not (Test-Path $Output) -or (Get-Item $Output).Length -le 0) { throw "Missing converter test output: $Name" }
+  }
+
+  $Process = Start-Process -FilePath "dist/OS-Widgets.exe" -ArgumentList "--context-menu-self-test" -Wait -PassThru
+  if ($Process.ExitCode -ne 0) { throw "Windows context-menu self-test failed with exit code $($Process.ExitCode)." }
 } finally {
   $env:LOCALAPPDATA = $OriginalLocalAppData
   Remove-Item $SmokeRoot -Recurse -Force -ErrorAction SilentlyContinue
@@ -34,13 +46,14 @@ $Portable = Join-Path $Root "portable"
 Remove-Item $Release,$Portable -Recurse -Force -ErrorAction SilentlyContinue
 New-Item $Release,$Portable -ItemType Directory -Force | Out-Null
 Copy-Item "dist/OS-Widgets.exe" $Portable
-Copy-Item "motivational-quotes.txt","README.md" $Portable
+Copy-Item "motivational-quotes.txt","README.md","THIRD_PARTY_NOTICES.md" $Portable
 @"
 OS Widgets $Version — Windows x64 Portable
 
 1. Extract every file from this ZIP.
 2. Run OS-Widgets.exe.
-3. If Microsoft Defender SmartScreen appears, choose More info > Run anyway only after verifying the SHA-256 checksum from the release page.
+3. Enable the Explorer menu from Settings > File Converter if wanted.
+4. If Microsoft Defender SmartScreen appears, choose More info > Run anyway only after verifying the SHA-256 checksum from the release page.
 
 The executable is currently unsigned. Windows may display a reputation warning.
 "@ | Set-Content (Join-Path $Portable "START-HERE.txt") -Encoding UTF8

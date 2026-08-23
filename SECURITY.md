@@ -6,8 +6,8 @@ Security fixes are applied to the latest stable release.
 
 | Version | Supported |
 |---|---|
-| 1.2.x | Yes |
-| Release candidates | No |
+| 1.3.x | Yes |
+| 1.2.x and older | No |
 
 ## Reporting a vulnerability
 

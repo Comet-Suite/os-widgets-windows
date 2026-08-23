@@ -1,36 +1,37 @@
-# OS Widgets 1.2.0
+# OS Widgets 1.3.0
 
-The first stable release of OS Widgets for Windows 10 and Windows 11.
+This release adds an optional Windows Explorer file converter while keeping the desktop widgets and previous 1.2.0 release available.
 
 ## Downloads
 
-- `OS-Widgets-1.2.0-Windows-x64-Setup.exe` — current-user installer
-- `OS-Widgets-1.2.0-Windows-x64-Portable.zip` — portable build
-- `SHA256SUMS.txt` — download verification
+- `OS-Widgets-1.3.0-Windows-x64-Setup.exe`
+- `OS-Widgets-1.3.0-Windows-x64-Portable.zip`
+- `SHA256SUMS.txt`
 
-## Included
+## File Converter
 
-- Four configurable analog or digital clocks
-- CPU, GPU, RAM, network, disk-volume, and battery monitoring
-- News slider with article images and offline handling
-- Local Music Player
-- Goal Countdown
-- Calendar with dated to-do items
-- Offline motivational quotes
-- Themes, colors, opacity, flat widget cards, and four size presets
-- Performance alerts, custom alert sounds, and Windows diagnostics
+Enable it from **Settings → File Converter**. Supported file extensions receive an **OS Widgets** submenu in Windows Explorer with only the valid output formats for that source type. Converted files are saved in the source folder with collision-safe names.
 
-## Stable-release changes
+### Included formats
 
-- Removed the painted background shadow from every widget
-- Removed UTC offset small print from clock cards
-- Updated Settings navigation, page icons, controls, and scrollbars
-- Switched Windows disk occupancy to native Windows volume APIs with one-decimal precision
-- Added an installer reset marker so the installed app starts with default settings rather than source-run preferences
-- Added a packaged Windows self-test for default-state reset and volume detection
+- Images: PNG, JPEG, WebP, BMP, TIFF, GIF, ICO, PDF
+- Documents: TXT, Markdown, HTML, DOCX, PDF, PPTX text extraction
+- Tables: CSV, JSON, XLSX, PDF
+- Audio: MP3, WAV, FLAC, OGG, M4A
+- Video: MP4, MKV, AVI, MOV, WebM, MP3, WAV
+
+Media conversion uses the FFmpeg binary bundled through imageio-ffmpeg. Office conversions preserve document content but may simplify advanced layouts.
+
+## Other changes
+
+- Added File Converter status and dependency checks to Diagnostics
+- Added automatic cleanup of Explorer menu entries during uninstall
+- Added a dedicated conversion progress window and Open folder action
+- Added collision-safe output naming; source files are never overwritten
+- Converter libraries load only when a conversion is requested
 
 ## Verification
 
-The release workflow compiles the source, builds the x64 executable, runs the packaged self-test on Windows, creates both packages, and publishes SHA-256 checksums.
+The Windows workflow builds the executable, verifies the clean installer state, performs real packaged image/document/table/audio conversions, registers and removes the Explorer submenu in a self-test, builds the installer and portable archive, and publishes SHA-256 checksums.
 
-The executables are currently unsigned. Windows SmartScreen may display a reputation warning; verify the checksum before running a download.
+The executables are not Authenticode-signed. Windows SmartScreen may display a reputation warning; verify the release checksum before running a download.

@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.3.0 — 2026-08-23
+
+### Added
+
+- Optional format-aware OS Widgets submenu in Windows Explorer
+- Image, document, table, audio, and video conversion
+- Same-folder collision-safe output naming
+- Conversion progress and completion window
+- File Converter Settings and Diagnostics sections
+- Packaged converter and context-menu self-tests
+
+### Packaging
+
+- Bundled FFmpeg through imageio-ffmpeg
+- Added third-party notices
+- Explorer integration is removed during uninstall
+
 ## 1.2.0 — 2026-08-21
 
 First stable Windows release.

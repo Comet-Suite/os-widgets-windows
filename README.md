@@ -8,7 +8,7 @@
 [![Release](https://img.shields.io/github/v/release/Comet-Suite/os-widgets-windows?label=release&color=2490ee)](https://github.com/Comet-Suite/os-widgets-windows/releases/latest)
 [![Windows 10/11](https://img.shields.io/badge/Windows-10%20%7C%2011-2490ee?logo=windows11&logoColor=white)](#requirements)
 
-OS Widgets puts clocks, system information, news, music controls, goals, a calendar, and short quotes directly on the Windows desktop.
+OS Widgets adds configurable desktop widgets and an optional right-click file converter to Windows.
 
 [Download](https://github.com/Comet-Suite/os-widgets-windows/releases/latest) · [Screenshots](#screenshots) · [Wallpapers](#wallpapers) · [Report a problem](https://github.com/Comet-Suite/os-widgets-windows/issues)
 
@@ -24,8 +24,8 @@ OS Widgets puts clocks, system information, news, music controls, goals, a calen
 
 The [latest release](https://github.com/Comet-Suite/os-widgets-windows/releases/latest) provides two Windows x64 packages:
 
-- **Setup:** `OS-Widgets-1.2.0-Windows-x64-Setup.exe`
-- **Portable:** `OS-Widgets-1.2.0-Windows-x64-Portable.zip`
+- **Setup:** `OS-Widgets-1.3.0-Windows-x64-Setup.exe`
+- **Portable:** `OS-Widgets-1.3.0-Windows-x64-Portable.zip`
 
 The installer is recommended. It installs for the current user and can add desktop and startup shortcuts. The first installed launch deliberately starts with the default configuration instead of reusing settings from a Python/source run.
 
@@ -42,14 +42,39 @@ Release downloads include `SHA256SUMS.txt`. The executables are not Authenticode
 | Goal | Countdown in days, hours, minutes, and seconds with optional artwork |
 | Calendar | Month navigation and dated to-do items with completion state |
 | Quotes | Offline built-in and custom quotes in an ultra-mini card |
+| File Converter | Format-aware Explorer submenu for images, documents, tables, audio, and video |
 | Appearance | Light/dark theme, colors, opacity, flat cards, and size presets |
 
-Music, Goal, Calendar, and Quotes are disabled by default. They do not create widget windows or timers until enabled.
+Music, Goal, Calendar, Quotes, and File Converter integration are disabled by default. They do not create widget windows, timers, or Explorer entries until enabled.
+
+## File Converter
+
+Enable **Settings → File Converter → Enable OS Widgets in the Windows file context menu**, then save. Right-click a supported file and open **OS Widgets** to see only the output formats available for that extension. The converted file is written to the same folder; existing files are never overwritten.
+
+<div align="center">
+  <img src="docs/screenshots/file-converter-settings.png" alt="File Converter settings" width="62%">
+</div>
+
+<div align="center">
+  <img src="docs/screenshots/context-menu-preview.png" alt="OS Widgets format-aware context submenu" width="42%">
+  <img src="docs/screenshots/conversion-complete.png" alt="Completed file conversion" width="42%">
+</div>
+
+| Source family | Output formats |
+|---|---|
+| Images | PNG, JPEG, WebP, BMP, TIFF, GIF, ICO, PDF |
+| Text and documents | TXT, Markdown, HTML, DOCX, PDF; text extraction from PDF and PPTX |
+| Tables | CSV, JSON, XLSX, PDF |
+| Audio | MP3, WAV, FLAC, OGG, M4A |
+| Video | MP4, MKV, AVI, MOV, WebM, MP3, WAV |
+
+Media conversion uses the FFmpeg binary included in the package. Office conversions preserve document content but may simplify complex page layouts. On Windows 11, extension-based commands may appear under **Show more options**.
 
 ## Requirements
 
 - Windows 10 or Windows 11, 64-bit
 - Windows Media Foundation codecs for music playback
+- Approximately 500 MB free space for the installed package
 - Internet access only for News
 
 ## Run from source
@@ -95,7 +120,7 @@ Matching dark and light wallpapers are included in [`wallpapers/`](wallpapers/RE
 
 ## Privacy
 
-OS Widgets has no account system, telemetry, or advertising. Calendar, goal, quote, and music data stay on the computer. Only the News widget contacts the configured RSS and image sources.
+OS Widgets has no account system, telemetry, or advertising. Calendar, goal, quote, music, and file conversion data stay on the computer. Only the News widget contacts the configured RSS and image sources.
 
 ## Build the Windows packages
 
@@ -113,8 +138,9 @@ A `v*` tag runs the same build through GitHub Actions and publishes the installe
 os_widgets.py              Application source
 motivational-quotes.txt    Built-in quote list in text form
 assets/                    Windows icon
-packaging/          PyInstaller and Inno Setup files
-wallpapers/         Desktop and portrait backgrounds
+packaging/                 PyInstaller and Inno Setup files
+docs/screenshots/          Product screenshots
+wallpapers/                Desktop and portrait backgrounds
 ```
 
 ## License
