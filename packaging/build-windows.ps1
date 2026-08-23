@@ -27,7 +27,7 @@ function Invoke-OSWidgetsSigning([string]$Path) {
   & $SignTool sign /fd SHA256 /td SHA256 /tr $Timestamp /f $SigningPfx /p $env:WINDOWS_SIGNING_CERT_PASSWORD $Path
   & $SignTool verify /pa /v $Path
   $Signature = Get-AuthenticodeSignature -FilePath $Path
-  if ($Signature.Status -ne "Valid") { throw "Authenticode verification failed for $Path: $($Signature.Status)" }
+  if ($Signature.Status -ne "Valid") { throw "Authenticode verification failed for ${Path}: $($Signature.Status)" }
 }
 
 python -m pip install --upgrade pip
