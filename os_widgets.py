@@ -3462,6 +3462,15 @@ class DiagnosticRow(QFrame):
         self.detail_label.setText(detail)
 
 
+def windows_authenticode_status(path: str | Path) -> tuple[str,str]:
+    if not IS_WINDOWS:return "Unavailable","Windows-only check"
+    script="$s=Get-AuthenticodeSignature -LiteralPath '"+str(Path(path)).replace("'","''")+"'; [pscustomobject]@{Status=$s.Status.ToString();Subject=$(if($s.SignerCertificate){$s.SignerCertificate.Subject}else{''})} | ConvertTo-Json -Compress"
+    flags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess,"CREATE_NO_WINDOW") else 0
+    process=subprocess.run(["powershell.exe","-NoProfile","-NonInteractive","-Command",script],capture_output=True,text=True,timeout=8,creationflags=flags)
+    data=json.loads(process.stdout.strip() or "{}")
+    return str(data.get("Status") or "Unknown"),str(data.get("Subject") or "")
+
+
 def run_windows_diagnostics(
     dpi_info: list[dict[str, Any]], tray_available: bool,
     widget_info: list[dict[str, Any]],
@@ -3476,12 +3485,9 @@ def run_windows_diagnostics(
 
     if IS_WINDOWS and getattr(sys,"frozen",False):
         try:
-            script="$s=Get-AuthenticodeSignature -LiteralPath '"+str(Path(sys.executable)).replace("'","''")+"'; [pscustomobject]@{Status=$s.Status.ToString();Subject=$(if($s.SignerCertificate){$s.SignerCertificate.Subject}else{''})} | ConvertTo-Json -Compress"
-            flags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess,"CREATE_NO_WINDOW") else 0
-            process=subprocess.run(["powershell.exe","-NoProfile","-NonInteractive","-Command",script],capture_output=True,text=True,timeout=8,creationflags=flags)
-            signature=json.loads(process.stdout.strip() or "{}")
-            if signature.get("Status")=="Valid":result["signature"]={"status":"pass","detail":"Authenticode signature is valid: "+str(signature.get("Subject") or "trusted signer")+". SmartScreen reputation is managed by Microsoft."}
-            else:result["signature"]={"status":"warn","detail":"Authenticode status: "+str(signature.get("Status") or "unknown")+". SmartScreen recognition requires a trusted signing certificate and reputation."}
+            signature_status,signature_subject=windows_authenticode_status(sys.executable)
+            if signature_status=="Valid":result["signature"]={"status":"pass","detail":"Authenticode signature is valid: "+(signature_subject or "trusted signer")+". SmartScreen reputation is managed by Microsoft."}
+            else:result["signature"]={"status":"warn","detail":"Authenticode status: "+signature_status+". SmartScreen recognition requires a trusted signing certificate and reputation."}
         except Exception as exc:result["signature"]={"status":"warn","detail":f"Could not verify Authenticode status: {exc}"}
     else:
         result["signature"]={"status":"info","detail":"Authenticode and SmartScreen readiness are checked in packaged Windows builds."}
@@ -5813,6 +5819,10 @@ def package_self_test(expect_defaults: bool = False) -> int:
                 return 24
             if any(not (0.0 <= float(item["percent"]) <= 100.0) for item in volumes):
                 return 25
+            if getattr(sys,"frozen",False):
+                signature_status,_subject=windows_authenticode_status(sys.executable)
+                if signature_status not in ("Valid","NotSigned"):
+                    return 27
         return 0
     except Exception:
         return 99
