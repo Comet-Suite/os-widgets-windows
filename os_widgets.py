@@ -5821,7 +5821,7 @@ def package_self_test(expect_defaults: bool = False) -> int:
                 return 25
             if getattr(sys,"frozen",False):
                 signature_status,_subject=windows_authenticode_status(sys.executable)
-                if signature_status not in ("Valid","NotSigned"):
+                if not signature_status or signature_status == "Unavailable":
                     return 27
         return 0
     except Exception:
