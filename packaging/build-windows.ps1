@@ -1,8 +1,34 @@
 $ErrorActionPreference = "Stop"
 $PSNativeCommandUseErrorActionPreference = $true
-$Version = "1.3.0"
+$Version = "1.4.0-dev"
 $Root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 Set-Location $Root
+
+$SigningPfx = $null
+$SignTool = $null
+$SigningEnabled = -not [string]::IsNullOrWhiteSpace($env:WINDOWS_SIGNING_CERT_BASE64)
+if ($SigningEnabled) {
+  if ([string]::IsNullOrWhiteSpace($env:WINDOWS_SIGNING_CERT_PASSWORD)) { throw "WINDOWS_SIGNING_CERT_PASSWORD is required when signing is enabled." }
+  $SigningTemp = if ($env:RUNNER_TEMP) { $env:RUNNER_TEMP } else { $env:TEMP }
+  $SigningPfx = Join-Path $SigningTemp "os-widgets-signing.pfx"
+  [IO.File]::WriteAllBytes($SigningPfx, [Convert]::FromBase64String($env:WINDOWS_SIGNING_CERT_BASE64))
+  $SignToolCommand = Get-Command "signtool.exe" -ErrorAction SilentlyContinue
+  if ($SignToolCommand) { $SignTool = $SignToolCommand.Source }
+  if (-not $SignTool) {
+    $SignTool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Filter signtool.exe -Recurse -ErrorAction SilentlyContinue |
+      Where-Object { $_.FullName -match '\\x64\\signtool\.exe$' } | Sort-Object FullName -Descending | Select-Object -First 1 -ExpandProperty FullName
+  }
+  if (-not $SignTool) { throw "signtool.exe was not found." }
+}
+
+function Invoke-OSWidgetsSigning([string]$Path) {
+  if (-not $SigningEnabled) { Write-Host "Unsigned development build: $Path"; return }
+  $Timestamp = if ($env:WINDOWS_SIGNING_TIMESTAMP_URL) { $env:WINDOWS_SIGNING_TIMESTAMP_URL } else { "http://timestamp.digicert.com" }
+  & $SignTool sign /fd SHA256 /td SHA256 /tr $Timestamp /f $SigningPfx /p $env:WINDOWS_SIGNING_CERT_PASSWORD $Path
+  & $SignTool verify /pa /v $Path
+  $Signature = Get-AuthenticodeSignature -FilePath $Path
+  if ($Signature.Status -ne "Valid") { throw "Authenticode verification failed for $Path: $($Signature.Status)" }
+}
 
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt pyinstaller
@@ -41,6 +67,8 @@ try {
   Remove-Item $SmokeRoot -Recurse -Force -ErrorAction SilentlyContinue
 }
 
+Invoke-OSWidgetsSigning "dist/OS-Widgets.exe"
+
 $Release = Join-Path $Root "release"
 $Portable = Join-Path $Root "portable"
 Remove-Item $Release,$Portable -Recurse -Force -ErrorAction SilentlyContinue
@@ -70,6 +98,7 @@ $iscc = if ($isccCommand) { $isccCommand.Source } else {
 if (-not $iscc) { throw "Inno Setup 6 compiler (ISCC.exe) was not found." }
 Write-Host "Using Inno Setup compiler: $iscc"
 & $iscc "packaging/os-widgets.iss"
+Invoke-OSWidgetsSigning (Join-Path $Release "OS-Widgets-$Version-Windows-x64-Setup.exe")
 
 $Assets = Get-ChildItem $Release -File | Sort-Object Name
 $Lines = foreach ($Asset in $Assets) {
@@ -79,3 +108,4 @@ $Lines = foreach ($Asset in $Assets) {
 $Lines | Set-Content "$Release/SHA256SUMS.txt" -Encoding ascii
 Write-Host "Windows release assets created in $Release"
 Get-ChildItem $Release | Format-Table Name,Length
+if ($SigningPfx) { Remove-Item $SigningPfx -Force -ErrorAction SilentlyContinue }

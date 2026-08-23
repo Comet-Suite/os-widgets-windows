@@ -14,6 +14,8 @@ OS Widgets adds configurable desktop widgets and an optional right-click file co
 
 </div>
 
+> **Development status:** `main` contains the unreleased 1.4 development work. The latest public package remains OS Widgets 1.3.0; no new release has been created for these changes.
+
 ## Screenshots
 
 <div align="center">
@@ -60,15 +62,17 @@ Enable **Settings → File Converter → Enable OS Widgets in the Windows file c
   <img src="docs/screenshots/conversion-complete.png" alt="Completed file conversion" width="42%">
 </div>
 
+The unreleased development build recognizes **77 source extensions** and offers **50 output formats**.
+
 | Source family | Output formats |
 |---|---|
-| Images | PNG, JPEG, WebP, BMP, TIFF, GIF, ICO, PDF |
-| Text and documents | TXT, Markdown, HTML, DOCX, PDF; text extraction from PDF and PPTX |
-| Tables | CSV, JSON, XLSX, PDF |
-| Audio | MP3, WAV, FLAC, OGG, M4A |
-| Video | MP4, MKV, AVI, MOV, WebM, MP3, WAV |
+| Images | PNG, JPEG, WebP, AVIF, HEIC, JPEG 2000, BMP, TIFF, GIF, ICO, TGA, PCX, PPM, PGM, PBM, DDS, PDF |
+| Text and documents | TXT, Markdown, HTML, DOCX, PDF, RTF, ODT, EPUB; text extraction from PDF and PPTX |
+| Tables and data | CSV, JSON, XLSX, XML, YAML, TOML, ODS, PDF |
+| Audio | MP3, WAV, FLAC, OGG, M4A, Opus, AIFF, AC-3, WMA |
+| Video | MP4, MKV, AVI, MOV, WebM, MPEG, FLV, OGV, 3GP, TS, MP3, WAV |
 
-Media conversion uses the FFmpeg binary included in the package. Office conversions preserve document content but may simplify complex page layouts. On Windows 11, extension-based commands may appear under **Show more options**.
+Media conversion uses the packaged FFmpeg engine. Office conversions preserve content but may simplify complex layouts. On Windows 11, extension-based commands may appear under **Show more options**. Three quality modes let users trade conversion speed and hardware use for output quality.
 
 ## Requirements
 
@@ -121,6 +125,14 @@ Matching dark and light wallpapers are included in [`wallpapers/`](wallpapers/RE
 ## Privacy
 
 OS Widgets has no account system, telemetry, or advertising. Calendar, goal, quote, music, and file conversion data stay on the computer. Only the News widget contacts the configured RSS and image sources.
+
+## Hardware use
+
+Converter engines remain unloaded until a conversion starts. The development build also uses adaptive clock timing, a slower desktop-level maintenance interval, ten-second background network sampling, and thirty-second battery sampling. **Fast** conversion quality lowers encoder work for large media files.
+
+## SmartScreen and code signing
+
+The build pipeline now supports Authenticode signing for both the application and installer and verifies signatures before packaging. A trusted certificate is not stored in this repository, so public SmartScreen recognition is not claimed. See [`docs/CODE_SIGNING.md`](docs/CODE_SIGNING.md) for the required GitHub Secrets and signing process.
 
 ## Build the Windows packages
 

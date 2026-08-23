@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased — 1.4 development
+
+- Expanded File Converter support to 77 recognized source extensions and 50 output formats
+- Added AVIF, HEIC, JPEG 2000, OpenDocument, EPUB, XML, YAML, TOML, Opus, AIFF, AC-3, MPEG, FLV, OGV, 3GP, and TS support
+- Added Fast, Balanced, and High conversion quality presets
+- Added optional Authenticode signing and verification for the EXE and installer
+- Added an Authenticode and SmartScreen-readiness Diagnostics check
+- Reduced background network, battery, clock, and desktop-level maintenance work
+- Updated the converter Settings and progress UI
+
 ## 1.3.0 — 2026-08-23
 
 ### Added

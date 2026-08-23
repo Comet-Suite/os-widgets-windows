@@ -46,6 +46,7 @@ import urllib.request
 import uuid
 import weakref
 import webbrowser
+import zipfile
 import xml.etree.ElementTree as ET
 from html.parser import HTMLParser
 from collections import deque
@@ -158,7 +159,7 @@ except ImportError:
 
 APP_NAME = "OS Widgets"
 TAGLINE = "Your desktop. Your widgets."
-APP_VERSION = "1.3.0"
+APP_VERSION = "1.4.0-dev"
 SETTINGS_SCHEMA_VERSION = 2
 IS_WINDOWS = sys.platform == "win32"
 
@@ -333,7 +334,7 @@ def default_settings() -> dict[str, Any]:
             "widget_surface": "#171C26",
             "widget_corners": "rounded",
         },
-        "general": {"startup": False, "performance_mode": "balanced", "file_converter_enabled": False},
+        "general": {"startup": False, "performance_mode": "balanced", "file_converter_enabled": False, "file_converter_quality": "balanced"},
         "widgets": {
             "clock1": clock_config("Local Time", "Local", 0),
             "clock2": clock_config("New York", "America/New_York", 1),
@@ -2073,6 +2074,7 @@ class CPUWidget(BaseWidget):
         self.net_down = self.net_up = 0.0
         self.net_adapter = "Wi-Fi"
         self.net_connected = False
+        self.network_counter = 10000
         self.network_peak = 128 * 1024.0
         self.gpu_model = "Detecting graphics processor…"
         self.gpu_name_in_progress = False
@@ -2250,6 +2252,9 @@ class CPUWidget(BaseWidget):
         STORE.save()
         if self.metric_index == 1:
             self.request_gpu_name()
+        elif self.metric_index == 3:
+            self.network_counter = 10000
+            QTimer.singleShot(0, self.sample)
         elif self.metric_index == 4:
             # Force a fresh Windows volume query when the user opens Disks.
             self.disk_counter = 30000
@@ -2278,21 +2283,27 @@ class CPUWidget(BaseWidget):
             self.render_metric()
 
     def sample(self) -> None:
+        interval = max(500, int(self.timer.interval() or self.config.get("interval_ms", 2000)))
         cpu = self.monitor.cpu_percent()
         ram, used, total, available = self.monitor.memory_details()
-        down, up, adapter, connected = self.monitor.network_rates()
         self.values["CPU"] = cpu
         self.values["RAM"] = ram
         self.memory_used, self.memory_total, self.memory_available = used, total, available
-        self.net_down, self.net_up = down, up
-        self.net_adapter, self.net_connected = adapter, connected
         self.histories["CPU"].append(cpu)
         self.histories["RAM"].append(ram)
-        traffic = down + up
-        self.network_peak = max(128 * 1024.0, self.network_peak * 0.96, traffic)
-        self.histories["WI-FI"].append(min(100.0, traffic * 100.0 / self.network_peak))
 
-        interval = max(500, int(self.config.get("interval_ms", 2000)))
+        # Network interface enumeration is noticeably more expensive than CPU
+        # and RAM reads on some systems. Keep it live on the Wi-Fi page and use
+        # a ten-second background cadence elsewhere.
+        self.network_counter += interval
+        if self.metric_index == 3 or self.network_counter >= 10000:
+            self.network_counter = 0
+            down, up, adapter, connected = self.monitor.network_rates()
+            self.net_down, self.net_up = down, up
+            self.net_adapter, self.net_connected = adapter, connected
+            traffic = down + up
+            self.network_peak = max(128 * 1024.0, self.network_peak * 0.96, traffic)
+            self.histories["WI-FI"].append(min(100.0, traffic * 100.0 / self.network_peak))
         self.disk_counter += interval
         disk_refresh_ms = 5000 if self.metric_index == 4 else 30000
         if self.disk_counter >= disk_refresh_ms or not self.disk_volumes:
@@ -2302,7 +2313,7 @@ class CPUWidget(BaseWidget):
             self.values["DISKS"] = disk_percent
             self.histories["DISKS"].append(disk_percent); self.update_disk_rows()
         self.battery_counter += interval
-        if self.battery_counter >= 10000 or not self.battery_probed:
+        if self.battery_counter >= 30000 or not self.battery_probed:
             self.battery_counter = 0; self.battery_probed = True; self.battery_info = self.monitor.battery_status()
             battery_percent = float(self.battery_info["percent"]) if self.battery_info else 0.0
             self.values["BATTERY"] = battery_percent if self.battery_info else None
@@ -3463,6 +3474,18 @@ def run_windows_diagnostics(
     else:
         result["platform"] = {"status": "warn", "detail": f"Running on {platform.system()}; final native checks require Windows 10/11."}
 
+    if IS_WINDOWS and getattr(sys,"frozen",False):
+        try:
+            script="$s=Get-AuthenticodeSignature -LiteralPath '"+str(Path(sys.executable)).replace("'","''")+"'; [pscustomobject]@{Status=$s.Status.ToString();Subject=$(if($s.SignerCertificate){$s.SignerCertificate.Subject}else{''})} | ConvertTo-Json -Compress"
+            flags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess,"CREATE_NO_WINDOW") else 0
+            process=subprocess.run(["powershell.exe","-NoProfile","-NonInteractive","-Command",script],capture_output=True,text=True,timeout=8,creationflags=flags)
+            signature=json.loads(process.stdout.strip() or "{}")
+            if signature.get("Status")=="Valid":result["signature"]={"status":"pass","detail":"Authenticode signature is valid: "+str(signature.get("Subject") or "trusted signer")+". SmartScreen reputation is managed by Microsoft."}
+            else:result["signature"]={"status":"warn","detail":"Authenticode status: "+str(signature.get("Status") or "unknown")+". SmartScreen recognition requires a trusted signing certificate and reputation."}
+        except Exception as exc:result["signature"]={"status":"warn","detail":f"Could not verify Authenticode status: {exc}"}
+    else:
+        result["signature"]={"status":"info","detail":"Authenticode and SmartScreen readiness are checked in packaged Windows builds."}
+
     # GPU PDH counter availability and one real formatted sample.
     if IS_WINDOWS:
         gpu = GPUPerformanceMonitor()
@@ -3639,7 +3662,7 @@ def run_windows_diagnostics(
         "status": "pass" if psutil is not None and qta is not None else "warn",
         "detail": f"PySide6 {pyside_version} · psutil {'installed' if psutil else 'missing'} · qtawesome {'installed' if qta else 'missing'}",
     }
-    converter_modules = (("PIL","Pillow"),("docx","python-docx"),("pypdf","pypdf"),("reportlab","ReportLab"),("openpyxl","openpyxl"),("pptx","python-pptx"),("bs4","BeautifulSoup"),("markdown","Markdown"),("imageio_ffmpeg","FFmpeg"))
+    converter_modules = (("PIL","Pillow"),("pillow_heif","HEIF/HEIC"),("pillow_avif","AVIF"),("docx","python-docx"),("pypdf","pypdf"),("reportlab","ReportLab"),("openpyxl","openpyxl"),("pptx","python-pptx"),("odf","OpenDocument"),("yaml","YAML"),("defusedxml","safe XML"),("tomli_w","TOML"),("striprtf","RTF"),("bs4","BeautifulSoup"),("markdown","Markdown"),("imageio_ffmpeg","FFmpeg"))
     missing=[]
     for module,label in converter_modules:
         try:__import__(module)
@@ -4134,23 +4157,24 @@ class NewsWidget(BaseWidget):
 # Windows file converter
 # ---------------------------------------------------------------------------
 
-IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff", ".gif", ".ico"}
-TEXT_EXTENSIONS = {".txt", ".md", ".html", ".htm"}
-DOCUMENT_EXTENSIONS = {".docx", ".pdf", ".pptx"}
-DATA_EXTENSIONS = {".csv", ".json", ".xlsx"}
-AUDIO_EXTENSIONS = {".mp3", ".wav", ".flac", ".ogg", ".m4a", ".aac", ".wma"}
-VIDEO_EXTENSIONS = {".mp4", ".mkv", ".avi", ".mov", ".webm", ".wmv", ".m4v"}
+IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff", ".gif", ".ico", ".avif", ".heic", ".heif", ".jp2", ".j2k", ".jpf", ".jpx", ".tga", ".pcx", ".ppm", ".pgm", ".pbm", ".dds"}
+TEXT_EXTENSIONS = {".txt", ".md", ".html", ".htm", ".log", ".rst"}
+DOCUMENT_EXTENSIONS = {".docx", ".pdf", ".pptx", ".rtf", ".odt", ".epub"}
+DATA_EXTENSIONS = {".csv", ".json", ".xlsx", ".xml", ".yaml", ".yml", ".toml", ".ini", ".ods"}
+AUDIO_EXTENSIONS = {".mp3", ".wav", ".flac", ".ogg", ".m4a", ".aac", ".wma", ".opus", ".aiff", ".aif", ".ac3", ".amr", ".ape", ".alac", ".caf", ".mka"}
+VIDEO_EXTENSIONS = {".mp4", ".mkv", ".avi", ".mov", ".webm", ".wmv", ".m4v", ".flv", ".mpeg", ".mpg", ".m2v", ".3gp", ".3g2", ".ts", ".mts", ".m2ts", ".vob", ".ogv"}
 CONVERTER_SOURCE_EXTENSIONS = sorted(IMAGE_EXTENSIONS | TEXT_EXTENSIONS | DOCUMENT_EXTENSIONS | DATA_EXTENSIONS | AUDIO_EXTENSIONS | VIDEO_EXTENSIONS)
 FORMAT_LABELS = {
-    "png":"PNG image", "jpg":"JPEG image", "webp":"WebP image", "bmp":"BMP image", "tiff":"TIFF image", "gif":"GIF image", "ico":"Windows icon", "pdf":"PDF document",
-    "txt":"Plain text", "md":"Markdown", "html":"HTML document", "docx":"Word document", "pptx":"PowerPoint text", "csv":"CSV table", "json":"JSON data", "xlsx":"Excel workbook",
-    "mp3":"MP3 audio", "wav":"WAV audio", "flac":"FLAC audio", "ogg":"Ogg audio", "m4a":"M4A audio", "mp4":"MP4 video", "mkv":"Matroska video", "avi":"AVI video", "mov":"QuickTime video", "webm":"WebM video",
+    "png":"PNG image", "jpg":"JPEG image", "webp":"WebP image", "bmp":"BMP image", "tiff":"TIFF image", "gif":"GIF image", "ico":"Windows icon", "avif":"AVIF image", "heic":"HEIC image", "jp2":"JPEG 2000 image", "tga":"TGA image", "pcx":"PCX image", "ppm":"PPM image", "pgm":"PGM image", "pbm":"PBM image", "dds":"DDS texture", "pdf":"PDF document",
+    "txt":"Plain text", "md":"Markdown", "html":"HTML document", "docx":"Word document", "rtf":"Rich Text Format", "odt":"OpenDocument text", "epub":"EPUB book", "csv":"CSV table", "json":"JSON data", "xlsx":"Excel workbook", "xml":"XML data", "yaml":"YAML data", "toml":"TOML data", "ods":"OpenDocument sheet",
+    "mp3":"MP3 audio", "wav":"WAV audio", "flac":"FLAC audio", "ogg":"Ogg audio", "m4a":"M4A audio", "opus":"Opus audio", "aiff":"AIFF audio", "ac3":"Dolby AC-3 audio", "wma":"Windows Media audio",
+    "mp4":"MP4 video", "mkv":"Matroska video", "avi":"AVI video", "mov":"QuickTime video", "webm":"WebM video", "mpg":"MPEG video", "flv":"Flash video", "ogv":"Ogg video", "3gp":"3GP video", "ts":"MPEG transport stream",
 }
 
 
 def normalized_extension(value: str) -> str:
     ext = value.lower().lstrip(".")
-    return {"jpeg":"jpg", "tif":"tiff", "htm":"html", "m4v":"mp4"}.get(ext, ext)
+    return {"jpeg":"jpg", "tif":"tiff", "htm":"html", "heif":"heic", "j2k":"jp2", "jpf":"jp2", "jpx":"jp2", "aif":"aiff", "m4v":"mp4", "mpeg":"mpg", "m2v":"mpg", "3g2":"3gp", "mts":"ts", "m2ts":"ts", "yml":"yaml"}.get(ext, ext)
 
 
 def converter_targets_for(path_or_extension: str | Path) -> list[str]:
@@ -4158,21 +4182,21 @@ def converter_targets_for(path_or_extension: str | Path) -> list[str]:
     suffix = Path(text).suffix.lower() if not text.startswith(".") else text.lower()
     source = normalized_extension(suffix)
     if suffix in IMAGE_EXTENSIONS:
-        targets = ["png", "jpg", "webp", "bmp", "tiff", "gif", "ico", "pdf"]
+        targets = ["png", "jpg", "webp", "bmp", "tiff", "gif", "ico", "avif", "heic", "jp2", "tga", "pcx", "ppm", "pgm", "pbm", "dds", "pdf"]
     elif suffix in TEXT_EXTENSIONS:
-        targets = ["txt", "md", "html", "docx", "pdf"]
-    elif suffix == ".docx":
-        targets = ["pdf", "txt", "md", "html"]
+        targets = ["txt", "md", "html", "docx", "rtf", "odt", "epub", "pdf"]
+    elif suffix in (".docx", ".odt", ".rtf", ".epub"):
+        targets = ["pdf", "docx", "odt", "rtf", "epub", "txt", "md", "html"]
     elif suffix == ".pdf":
-        targets = ["txt", "docx"]
+        targets = ["txt", "docx", "odt", "rtf"]
     elif suffix == ".pptx":
-        targets = ["pdf", "docx", "txt"]
+        targets = ["pdf", "docx", "odt", "rtf", "txt"]
     elif suffix in DATA_EXTENSIONS:
-        targets = ["csv", "json", "xlsx", "pdf"]
+        targets = ["csv", "json", "xlsx", "xml", "yaml", "toml", "ods", "pdf"]
     elif suffix in AUDIO_EXTENSIONS:
-        targets = ["mp3", "wav", "flac", "ogg", "m4a"]
+        targets = ["mp3", "wav", "flac", "ogg", "m4a", "opus", "aiff", "ac3", "wma"]
     elif suffix in VIDEO_EXTENSIONS:
-        targets = ["mp4", "mkv", "avi", "mov", "webm", "mp3", "wav"]
+        targets = ["mp4", "mkv", "avi", "mov", "webm", "mpg", "flv", "ogv", "3gp", "ts", "mp3", "wav"]
     else:
         return []
     return [target for target in targets if normalized_extension(target) != source]
@@ -4191,6 +4215,22 @@ def converter_output_path(source: Path, target: str) -> Path:
     return candidate
 
 
+def _ensure_image_plugins() -> None:
+    try:
+        import pillow_avif  # noqa: F401
+    except Exception:
+        pass
+    try:
+        from pillow_heif import register_heif_opener
+        register_heif_opener()
+    except Exception:
+        pass
+
+
+def converter_quality_preset() -> str:
+    return str(STORE.data.get("general", {}).get("file_converter_quality", "balanced"))
+
+
 def _flatten_rgb(image):
     from PIL import Image
     if image.mode in ("RGBA", "LA") or (image.mode == "P" and "transparency" in image.info):
@@ -4199,6 +4239,7 @@ def _flatten_rgb(image):
 
 
 def _convert_image(source: Path, temporary: Path, target: str) -> None:
+    _ensure_image_plugins()
     from PIL import Image, ImageSequence
     target = normalized_extension(target)
     with Image.open(source) as image:
@@ -4207,19 +4248,26 @@ def _convert_image(source: Path, temporary: Path, target: str) -> None:
             frames[0].save(temporary, format="GIF", save_all=True, append_images=frames[1:], loop=image.info.get("loop", 0), duration=image.info.get("duration", 100), optimize=True)
             return
         image.seek(0)
-        if target in ("jpg", "pdf"):
+        if target in ("jpg", "pdf", "jp2"):
             output = _flatten_rgb(image)
-        elif target == "ico":
+        elif target in ("ico", "gif", "avif", "heic"):
             output = image.convert("RGBA")
-        elif target == "gif":
-            output = image.convert("RGBA")
+        elif target == "pgm":
+            output = image.convert("L")
+        elif target == "pbm":
+            output = image.convert("1")
+        elif target == "ppm":
+            output = image.convert("RGB")
         else:
             output = image.copy()
-        formats = {"jpg":"JPEG", "png":"PNG", "webp":"WEBP", "bmp":"BMP", "tiff":"TIFF", "gif":"GIF", "ico":"ICO", "pdf":"PDF"}
+        formats = {"jpg":"JPEG", "png":"PNG", "webp":"WEBP", "bmp":"BMP", "tiff":"TIFF", "gif":"GIF", "ico":"ICO", "avif":"AVIF", "heic":"HEIF", "jp2":"JPEG2000", "tga":"TGA", "pcx":"PCX", "ppm":"PPM", "pgm":"PPM", "pbm":"PPM", "dds":"DDS", "pdf":"PDF"}
+        quality = converter_quality_preset(); image_quality = {"fast": 82, "balanced": 92, "high": 97}.get(quality, 92)
         options: dict[str, Any] = {}
-        if target == "jpg": options = {"quality": 94, "optimize": True}
-        elif target == "webp": options = {"quality": 92, "method": 6}
-        elif target == "png": options = {"optimize": True}
+        if target == "jpg": options = {"quality": image_quality, "optimize": quality != "fast"}
+        elif target == "webp": options = {"quality": image_quality, "method": 3 if quality == "fast" else 6}
+        elif target == "avif": options = {"quality": image_quality, "speed": 8 if quality == "fast" else (4 if quality == "balanced" else 2)}
+        elif target == "heic": options = {"quality": image_quality}
+        elif target == "png": options = {"optimize": quality != "fast"}
         elif target == "ico": options = {"sizes": [(16,16),(24,24),(32,32),(48,48),(64,64),(128,128),(256,256)]}
         output.save(temporary, format=formats[target], **options)
 
@@ -4248,6 +4296,19 @@ def _extract_text(source: Path) -> str:
             lines.extend(shape.text for shape in slide.shapes if hasattr(shape, "text") and shape.text.strip())
             lines.append("")
         return "\n".join(lines)
+    if suffix == ".rtf":
+        from striprtf.striprtf import rtf_to_text
+        return rtf_to_text(source.read_text(encoding="utf-8", errors="replace"))
+    if suffix == ".odt":
+        from odf import teletype
+        from odf.opendocument import load
+        from odf.text import P, H
+        document=load(str(source));return "\n".join(teletype.extractText(node) for node in document.getElementsByType(H)+document.getElementsByType(P))
+    if suffix == ".epub":
+        from bs4 import BeautifulSoup
+        with zipfile.ZipFile(source) as archive:
+            pages=[name for name in archive.namelist() if name.lower().endswith((".xhtml",".html",".htm"))]
+            return "\n\n".join(BeautifulSoup(archive.read(name),"html.parser").get_text("\n") for name in sorted(pages))
     raise ValueError("This document type is not supported.")
 
 
@@ -4273,6 +4334,28 @@ def _write_docx_text(text: str, output: Path, title: str) -> None:
     document.save(str(output))
 
 
+def _write_rtf_text(text: str, output: Path) -> None:
+    escaped=text.replace("\\","\\\\").replace("{","\\{").replace("}","\\}").replace("\n","\\par\n")
+    output.write_text("{\\rtf1\\ansi\\deff0 {\\fonttbl {\\f0 Segoe UI;}}\\f0\\fs22 "+escaped+"}",encoding="utf-8")
+
+
+def _write_odt_text(text: str, output: Path, title: str) -> None:
+    from odf.opendocument import OpenDocumentText
+    from odf.text import H, P
+    document=OpenDocumentText();document.text.addElement(H(outlinelevel=1,text=title))
+    for line in text.splitlines():document.text.addElement(P(text=line))
+    document.save(str(output),addsuffix=False)
+
+
+def _write_epub_text(text: str, output: Path, title: str) -> None:
+    identifier=uuid.uuid4().hex;body="<h1>"+html.escape(title)+"</h1>"+"".join("<p>"+html.escape(line)+"</p>" for line in text.splitlines() if line.strip())
+    container='<?xml version="1.0"?><container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>'
+    content=f'<?xml version="1.0" encoding="utf-8"?><html xmlns="http://www.w3.org/1999/xhtml"><head><title>{html.escape(title)}</title></head><body>{body}</body></html>'
+    package=f'<?xml version="1.0" encoding="utf-8"?><package version="3.0" xmlns="http://www.idpf.org/2007/opf" unique-identifier="bookid"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="bookid">{identifier}</dc:identifier><dc:title>{html.escape(title)}</dc:title><dc:language>en</dc:language></metadata><manifest><item id="content" href="content.xhtml" media-type="application/xhtml+xml"/></manifest><spine><itemref idref="content"/></spine></package>'
+    with zipfile.ZipFile(output,"w") as archive:
+        archive.writestr("mimetype","application/epub+zip",compress_type=zipfile.ZIP_STORED);archive.writestr("META-INF/container.xml",container);archive.writestr("OEBPS/content.xhtml",content);archive.writestr("OEBPS/content.opf",package)
+
+
 def _convert_text_document(source: Path, temporary: Path, target: str) -> None:
     target = normalized_extension(target); text = _extract_text(source); title = source.stem
     if target in ("txt", "md"):
@@ -4288,8 +4371,23 @@ def _convert_text_document(source: Path, temporary: Path, target: str) -> None:
         _write_docx_text(text, temporary, title)
     elif target == "pdf":
         _write_pdf_text(text, temporary, title)
+    elif target == "rtf":
+        _write_rtf_text(text, temporary)
+    elif target == "odt":
+        _write_odt_text(text, temporary, title)
+    elif target == "epub":
+        _write_epub_text(text, temporary, title)
     else:
         raise ValueError(f"Unsupported document output: {target}")
+
+
+def _records_from_object(data: Any) -> list[dict[str, Any]]:
+    if isinstance(data, dict):
+        if all(isinstance(value, list) for value in data.values()):
+            keys=list(data);length=max((len(data[key]) for key in keys),default=0);return [{key:(data[key][i] if i<len(data[key]) else None) for key in keys} for i in range(length)]
+        return [data]
+    if isinstance(data, list):return [item if isinstance(item,dict) else {"value":item} for item in data]
+    return [{"value":data}]
 
 
 def _load_table(source: Path) -> tuple[list[str], list[dict[str, Any]]]:
@@ -4298,21 +4396,51 @@ def _load_table(source: Path) -> tuple[list[str], list[dict[str, Any]]]:
         with source.open("r", encoding="utf-8-sig", errors="replace", newline="") as handle:
             reader = csv.DictReader(handle); rows = [dict(row) for row in reader]; headers = list(reader.fieldnames or [])
     elif suffix == ".json":
-        data = json.loads(source.read_text(encoding="utf-8"))
-        if isinstance(data, dict):
-            if all(isinstance(value, list) for value in data.values()):
-                keys=list(data);length=max((len(data[key]) for key in keys),default=0);rows=[{key:(data[key][i] if i<len(data[key]) else None) for key in keys} for i in range(length)]
-            else: rows=[data]
-        elif isinstance(data, list):
-            rows=[item if isinstance(item,dict) else {"value":item} for item in data]
-        else: rows=[{"value":data}]
-        headers=[]
+        rows=_records_from_object(json.loads(source.read_text(encoding="utf-8")));headers=[]
         for row in rows:
             for key in row:
                 if str(key) not in headers:headers.append(str(key))
     elif suffix == ".xlsx":
         from openpyxl import load_workbook
         workbook=load_workbook(str(source),read_only=True,data_only=True);sheet=workbook.active;values=list(sheet.iter_rows(values_only=True));headers=[str(value or f"column_{i+1}") for i,value in enumerate(values[0])] if values else [];rows=[{headers[i]:(row[i] if i<len(row) else None) for i in range(len(headers))} for row in values[1:]];workbook.close()
+    elif suffix in (".yaml", ".yml"):
+        import yaml
+        rows=_records_from_object(yaml.safe_load(source.read_text(encoding="utf-8")));headers=[]
+        for row in rows:
+            for key in row:
+                if str(key) not in headers:headers.append(str(key))
+    elif suffix == ".toml":
+        try:import tomllib
+        except ImportError:import tomli as tomllib
+        rows=_records_from_object(tomllib.loads(source.read_text(encoding="utf-8")));headers=[]
+        for row in rows:
+            for key in row:
+                if str(key) not in headers:headers.append(str(key))
+    elif suffix == ".ini":
+        import configparser
+        parser=configparser.ConfigParser();parser.read(source,encoding="utf-8");headers=["section","key","value"];rows=[{"section":section,"key":key,"value":value} for section in parser.sections() for key,value in parser.items(section)]
+    elif suffix == ".xml":
+        from defusedxml import ElementTree as SafeET
+        root=SafeET.parse(str(source)).getroot();rows=[]
+        for child in list(root):
+            record={"tag":child.tag,**{"@"+str(key):value for key,value in child.attrib.items()}}
+            if list(child):
+                for item in child:record[str(item.tag)]=(item.text or "").strip()
+            else:record["value"]=(child.text or "").strip()
+            rows.append(record)
+        if not rows:rows=[{"tag":root.tag,"value":(root.text or "").strip()}]
+        headers=[]
+        for row in rows:
+            for key in row:
+                if key not in headers:headers.append(key)
+    elif suffix == ".ods":
+        from odf import teletype
+        from odf.opendocument import load
+        from odf.table import Table, TableRow, TableCell
+        document=load(str(source));tables=document.spreadsheet.getElementsByType(Table);values=[]
+        if tables:
+            for row in tables[0].getElementsByType(TableRow):values.append([teletype.extractText(cell) for cell in row.getElementsByType(TableCell)])
+        headers=[str(value or f"column_{i+1}") for i,value in enumerate(values[0])] if values else [];rows=[{headers[i]:(row[i] if i<len(row) else None) for i in range(len(headers))} for row in values[1:]]
     else: raise ValueError("This table type is not supported.")
     if len(rows)>100000:raise ValueError("Tables are limited to 100,000 rows per conversion.")
     return headers,rows
@@ -4329,6 +4457,30 @@ def _convert_table(source: Path, temporary: Path, target: str) -> None:
         workbook=Workbook();sheet=workbook.active;sheet.title="Converted";sheet.append(headers)
         for row in rows:sheet.append([row.get(key) for key in headers])
         workbook.save(str(temporary))
+    elif target=="yaml":
+        import yaml
+        temporary.write_text(yaml.safe_dump(rows,allow_unicode=True,sort_keys=False),encoding="utf-8")
+    elif target=="toml":
+        import tomli_w
+        clean=[{str(key):("" if value is None else value if isinstance(value,(str,int,float,bool)) else str(value)) for key,value in row.items()} for row in rows]
+        temporary.write_text(tomli_w.dumps({"records":clean}),encoding="utf-8")
+    elif target=="xml":
+        import xml.etree.ElementTree as ElementTree
+        root=ElementTree.Element("records")
+        for row in rows:
+            record=ElementTree.SubElement(root,"record")
+            for key,value in row.items():field=ElementTree.SubElement(record,"field",name=str(key));field.text="" if value is None else str(value)
+        ElementTree.ElementTree(root).write(str(temporary),encoding="utf-8",xml_declaration=True)
+    elif target=="ods":
+        from odf.opendocument import OpenDocumentSpreadsheet
+        from odf.table import Table as OdfTable, TableRow as OdfRow, TableCell as OdfCell
+        from odf.text import P
+        document=OpenDocumentSpreadsheet();table=OdfTable(name="Converted")
+        for values in ([*headers],*[[row.get(key) for key in headers] for row in rows]):
+            odf_row=OdfRow()
+            for value in values:cell=OdfCell(valuetype="string");cell.addElement(P(text="" if value is None else str(value)));odf_row.addElement(cell)
+            table.addElement(odf_row)
+        document.spreadsheet.addElement(table);document.save(str(temporary),addsuffix=False)
     elif target=="pdf":
         from reportlab.lib import colors
         from reportlab.lib.pagesizes import A4,landscape
@@ -4342,9 +4494,10 @@ def _convert_table(source: Path, temporary: Path, target: str) -> None:
 def _convert_media(source: Path, temporary: Path, target: str) -> None:
     import imageio_ffmpeg
     ffmpeg=imageio_ffmpeg.get_ffmpeg_exe();target=normalized_extension(target)
+    quality=converter_quality_preset();preset={"fast":"veryfast","balanced":"medium","high":"slow"}.get(quality,"medium");crf={"fast":"27","balanced":"23","high":"19"}.get(quality,"23")
     codecs={
-        "mp3":["-vn","-c:a","libmp3lame","-q:a","2"], "wav":["-vn","-c:a","pcm_s16le"], "flac":["-vn","-c:a","flac"], "ogg":["-vn","-c:a","libvorbis","-q:a","6"], "m4a":["-vn","-c:a","aac","-b:a","192k"],
-        "mp4":["-c:v","libx264","-preset","medium","-crf","23","-c:a","aac","-movflags","+faststart"], "mkv":["-c:v","libx264","-preset","medium","-crf","23","-c:a","aac"], "avi":["-c:v","mpeg4","-q:v","4","-c:a","libmp3lame"], "mov":["-c:v","libx264","-preset","medium","-crf","23","-c:a","aac"], "webm":["-c:v","libvpx-vp9","-crf","32","-b:v","0","-c:a","libopus"],
+        "mp3":["-vn","-c:a","libmp3lame","-q:a","2"], "wav":["-vn","-c:a","pcm_s16le"], "flac":["-vn","-c:a","flac"], "ogg":["-vn","-c:a","libvorbis","-q:a","6"], "m4a":["-vn","-c:a","aac","-b:a","192k"], "opus":["-vn","-c:a","libopus","-b:a","160k"], "aiff":["-vn","-c:a","pcm_s16be"], "ac3":["-vn","-c:a","ac3","-b:a","192k"], "wma":["-vn","-c:a","wmav2","-b:a","192k"],
+        "mp4":["-c:v","libx264","-preset",preset,"-crf",crf,"-c:a","aac","-movflags","+faststart"], "mkv":["-c:v","libx264","-preset",preset,"-crf",crf,"-c:a","aac"], "avi":["-c:v","mpeg4","-q:v","4","-c:a","libmp3lame"], "mov":["-c:v","libx264","-preset",preset,"-crf",crf,"-c:a","aac"], "webm":["-c:v","libvpx-vp9","-crf","32","-b:v","0","-c:a","libopus"], "mpg":["-c:v","mpeg2video","-q:v","4","-c:a","mp2"], "flv":["-c:v","flv","-q:v","5","-c:a","libmp3lame"], "ogv":["-c:v","libtheora","-q:v","7","-c:a","libvorbis"], "3gp":["-c:v","mpeg4","-q:v","5","-c:a","aac"], "ts":["-c:v","libx264","-preset",preset,"-crf",crf,"-c:a","aac","-f","mpegts"],
     }
     command=[ffmpeg,"-hide_banner","-loglevel","error","-y","-i",str(source),*codecs[target],str(temporary)]
     flags=subprocess.CREATE_NO_WINDOW if IS_WINDOWS and hasattr(subprocess,"CREATE_NO_WINDOW") else 0
@@ -4406,24 +4559,22 @@ def set_file_converter_context_menu(enabled: bool) -> tuple[bool,str]:
     try:
         import winreg
         base=r"Software\Classes\SystemFileAssociations"
+        command_store=r"Software\Microsoft\Windows\CurrentVersion\Explorer\CommandStore\shell"
+        output_formats=sorted({target for suffix in CONVERTER_SOURCE_EXTENSIONS for target in converter_targets_for(suffix)})
         for suffix in CONVERTER_SOURCE_EXTENSIONS:_delete_registry_tree(winreg.HKEY_CURRENT_USER,base+"\\"+suffix+r"\shell\OSWidgets")
+        for target in output_formats:_delete_registry_tree(winreg.HKEY_CURRENT_USER,command_store+f"\\OSWidgets.convert.{target}")
         if enabled:
             prefix=_converter_launch_prefix();icon=str(Path(sys.executable).resolve())
+            # Commands are stored once and referenced by each extension menu.
+            # This keeps the registry compact even with fifty output formats.
+            for target in output_formats:
+                command_name=f"OSWidgets.convert.{target}";command_root=command_store+"\\"+command_name;key=winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER,command_root,0,winreg.KEY_WRITE)
+                winreg.SetValueEx(key,"MUIVerb",0,winreg.REG_SZ,f"Convert to {FORMAT_LABELS.get(target,target.upper())}");winreg.SetValueEx(key,"Icon",0,winreg.REG_SZ,icon);winreg.CloseKey(key)
+                command_key=winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER,command_root+r"\command",0,winreg.KEY_WRITE);command=subprocess.list2cmdline([*prefix,"--convert-to",target])+r' "%1"';winreg.SetValueEx(command_key,"",0,winreg.REG_SZ,command);winreg.CloseKey(command_key)
             for suffix in CONVERTER_SOURCE_EXTENSIONS:
                 parent=base+"\\"+suffix+r"\shell\OSWidgets";key=winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER,parent,0,winreg.KEY_WRITE)
-                winreg.SetValueEx(key,"MUIVerb",0,winreg.REG_SZ,"OS Widgets")
-                winreg.SetValueEx(key,"Icon",0,winreg.REG_SZ,icon)
-                winreg.SetValueEx(key,"SubCommands",0,winreg.REG_SZ,"")
-                winreg.SetValueEx(key,"MultiSelectModel",0,winreg.REG_SZ,"Single")
-                winreg.SetValueEx(key,"Version",0,winreg.REG_SZ,APP_VERSION)
-                winreg.CloseKey(key)
-                for index,target in enumerate(converter_targets_for(suffix),1):
-                    child=parent+f"\\shell\\{index:02d}_{target}";child_key=winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER,child,0,winreg.KEY_WRITE)
-                    winreg.SetValueEx(child_key,"MUIVerb",0,winreg.REG_SZ,f"Convert to {FORMAT_LABELS.get(target,target.upper())}")
-                    winreg.SetValueEx(child_key,"Icon",0,winreg.REG_SZ,icon);winreg.CloseKey(child_key)
-                    command_key=winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER,child+r"\command",0,winreg.KEY_WRITE)
-                    command=subprocess.list2cmdline([*prefix,"--convert-to",target])+r' "%1"'
-                    winreg.SetValueEx(command_key,"",0,winreg.REG_SZ,command);winreg.CloseKey(command_key)
+                commands=";".join(f"OSWidgets.convert.{target}" for target in converter_targets_for(suffix))
+                winreg.SetValueEx(key,"MUIVerb",0,winreg.REG_SZ,"OS Widgets");winreg.SetValueEx(key,"Icon",0,winreg.REG_SZ,icon);winreg.SetValueEx(key,"SubCommands",0,winreg.REG_SZ,commands);winreg.SetValueEx(key,"MultiSelectModel",0,winreg.REG_SZ,"Single");winreg.SetValueEx(key,"Version",0,winreg.REG_SZ,APP_VERSION);winreg.CloseKey(key)
         try:ctypes.windll.shell32.SHChangeNotify(0x08000000,0,None,None)
         except Exception:pass
         return True,""
@@ -4439,8 +4590,8 @@ class FileConversionDialog(QDialog):
         super().__init__(None);self.source=source;self.target=target;self.output:Optional[Path]=None;self.bridge=ConversionBridge(self);self.bridge.completed.connect(self.finished_conversion)
         self.setWindowTitle("OS Widgets · File Converter");self.setWindowIcon(make_app_icon());self.setFixedSize(560,270);self.setStyleSheet(app_stylesheet());self.setWindowFlag(Qt.WindowType.WindowContextHelpButtonHint,False)
         root=QVBoxLayout(self);root.setContentsMargins(24,22,24,20);root.setSpacing(13)
-        header=QHBoxLayout();icon=QLabel();icon.setPixmap(awesome_icon("fa6s.file-export",app_accent_color().name()).pixmap(28,28));titles=QVBoxLayout();titles.setSpacing(1);name=QLabel("File Converter");name.setStyleSheet("font-size:20px;font-weight:700;");sub=QLabel(f"{source.suffix.upper().lstrip('.')}  →  {FORMAT_LABELS.get(target,target.upper())}");sub.setObjectName("muted");titles.addWidget(name);titles.addWidget(sub);header.addWidget(icon);header.addLayout(titles);header.addStretch();root.addLayout(header)
-        card=QFrame();card.setObjectName("settingsCard");card_layout=QVBoxLayout(card);card_layout.setContentsMargins(15,13,15,13);self.file_label=QLabel(source.name);self.file_label.setStyleSheet("font-weight:650;");self.path_label=QLabel(str(source.parent));self.path_label.setObjectName("muted");self.path_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse);card_layout.addWidget(self.file_label);card_layout.addWidget(self.path_label);root.addWidget(card)
+        header=QHBoxLayout();icon=QLabel();icon.setPixmap(awesome_icon("fa6s.file-export",app_accent_color().name()).pixmap(28,28));titles=QVBoxLayout();titles.setSpacing(1);name=QLabel("File Converter");name.setStyleSheet("font-size:20px;font-weight:700;");quality=converter_quality_preset().title();sub=QLabel(f"{source.suffix.upper().lstrip('.')}  →  {FORMAT_LABELS.get(target,target.upper())}  ·  {quality}");sub.setObjectName("muted");titles.addWidget(name);titles.addWidget(sub);header.addWidget(icon);header.addLayout(titles);header.addStretch();root.addLayout(header)
+        card=QFrame();card.setObjectName("settingsCard");card_layout=QVBoxLayout(card);card_layout.setContentsMargins(15,13,15,13);self.file_label=QLabel(source.name);self.file_label.setStyleSheet("font-weight:650;");size=source.stat().st_size;size_text=f"{size/1048576:.1f} MB" if size>=1048576 else f"{max(1,size//1024)} KB";self.path_label=QLabel(f"{source.parent}  ·  {size_text}");self.path_label.setObjectName("muted");self.path_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse);card_layout.addWidget(self.file_label);card_layout.addWidget(self.path_label);root.addWidget(card)
         self.status=QLabel("Preparing conversion…");self.progress=QProgressBar();self.progress.setRange(0,0);self.progress.setFixedHeight(8);self.progress.setTextVisible(False);root.addWidget(self.status);root.addWidget(self.progress)
         buttons=QHBoxLayout();buttons.addStretch();self.folder_button=QPushButton("Open folder");self.folder_button.setIcon(awesome_icon("fa6s.folder-open"));self.folder_button.hide();self.folder_button.clicked.connect(self.open_folder);self.close_button=QPushButton("Close");self.close_button.setEnabled(False);self.close_button.clicked.connect(self.accept);buttons.addWidget(self.folder_button);buttons.addWidget(self.close_button);root.addLayout(buttons)
         QTimer.singleShot(80,self.start_conversion)
@@ -4501,7 +4652,8 @@ class SettingsPanel(QDialog):
         tagline.setObjectName("muted")
         name_box.addWidget(name); name_box.addWidget(tagline)
         header.addWidget(mark); header.addLayout(name_box); header.addStretch()
-        version = QLabel(f"STABLE  ·  {APP_VERSION}")
+        channel = "DEVELOPMENT" if "dev" in APP_VERSION else "STABLE"
+        version = QLabel(f"{channel}  ·  {APP_VERSION}")
         version.setObjectName("versionBadge")
         header.addWidget(version)
         outer.addLayout(header)
@@ -4893,21 +5045,24 @@ class SettingsPanel(QDialog):
 
     def build_converter_page(self) -> QWidget:
         page, layout = self.page_shell("File Converter", "Add format-aware conversion commands to the Windows file context menu. Converted files are saved beside the original.")
+        scroll=QScrollArea();scroll.setWidgetResizable(True);scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff);scroll.setStyleSheet("QScrollArea, QScrollArea > QWidget > QWidget { background:transparent; border:none; }");host=QWidget();host.setStyleSheet("background:transparent;");body=QVBoxLayout(host);body.setContentsMargins(1,2,8,4);body.setSpacing(11)
         cfg=self.draft["general"];card=QFrame();card.setObjectName("settingsCard");root=QVBoxLayout(card);root.setContentsMargins(18,16,18,16);root.setSpacing(11)
         enabled=QCheckBox("Enable OS Widgets in the Windows file context menu");enabled.setChecked(bool(cfg.get("file_converter_enabled",False)));root.addWidget(enabled)
+        format_count=len({target for extension in CONVERTER_SOURCE_EXTENSIONS for target in converter_targets_for(extension)});stats=QLabel(f"{len(CONVERTER_SOURCE_EXTENSIONS)} recognized file extensions · {format_count} output formats");stats.setStyleSheet(f"color:{app_accent_color().name()};font-weight:700;");root.addWidget(stats)
+        quality_row=QHBoxLayout();quality_row.addWidget(QLabel("Conversion quality"));quality=QComboBox();quality.addItem("Fast — lower hardware use","fast");quality.addItem("Balanced — recommended","balanced");quality.addItem("High — slower, larger output","high");quality.setCurrentIndex(max(0,quality.findData(str(cfg.get("file_converter_quality","balanced")))));quality_row.addWidget(quality,1);root.addLayout(quality_row)
         installed=file_converter_context_menu_enabled();status=QLabel(("Context menu is installed" if installed else "Context menu will be installed after you save") if IS_WINDOWS else "Windows Explorer integration is available only on Windows");status.setObjectName("muted");status.setWordWrap(True);root.addWidget(status)
-        note=QLabel("Right-click a supported file, open OS Widgets, then choose an output format. Windows 11 may place classic extension menus under Show more options.");note.setObjectName("muted");note.setWordWrap(True);root.addWidget(note);layout.addWidget(card)
+        note=QLabel("Right-click a supported file, open OS Widgets, then choose an output format. Windows 11 may place classic extension menus under Show more options.");note.setObjectName("muted");note.setWordWrap(True);root.addWidget(note);body.addWidget(card)
 
         formats=QGroupBox("Included converters");grid=QGridLayout(formats);grid.setHorizontalSpacing(10);grid.setVerticalSpacing(10)
-        groups=[("fa6s.image","Images","PNG, JPEG, WebP, BMP, TIFF, GIF, ICO, PDF"),("fa6s.file-lines","Documents","TXT, Markdown, HTML, Word, PDF, PowerPoint text"),("fa6s.table","Data","CSV, JSON, Excel, PDF"),("fa6s.music","Audio","MP3, WAV, FLAC, OGG, M4A"),("fa6s.film","Video","MP4, MKV, AVI, MOV, WebM, audio extraction")]
+        groups=[("fa6s.image","Images","PNG, JPEG, AVIF, HEIC, WebP, JPEG 2000, TIFF, TGA, DDS and more"),("fa6s.file-lines","Documents","TXT, Markdown, HTML, Word, PDF, RTF, ODT, EPUB, PowerPoint text"),("fa6s.table","Data","CSV, JSON, Excel, XML, YAML, TOML, ODS, PDF"),("fa6s.music","Audio","MP3, WAV, FLAC, OGG, M4A, Opus, AIFF, AC-3, WMA"),("fa6s.film","Video","MP4, MKV, AVI, MOV, WebM, MPEG, FLV, OGV, 3GP, TS")]
         for index,(icon_name,title,detail) in enumerate(groups):
-            box=QFrame();box.setObjectName("settingsCard");row=QHBoxLayout(box);row.setContentsMargins(12,10,12,10);icon=QLabel();icon.setPixmap(awesome_icon(icon_name,app_accent_color().name()).pixmap(18,18));text=QVBoxLayout();text.setSpacing(1);name=QLabel(title);name.setStyleSheet("font-weight:650;");desc=QLabel(detail);desc.setObjectName("muted");desc.setWordWrap(True);text.addWidget(name);text.addWidget(desc);row.addWidget(icon);row.addLayout(text,1);grid.addWidget(box,index//2,index%2)
-        layout.addWidget(formats)
+            box=QFrame();box.setObjectName("settingsCard");box.setMinimumHeight(62);row=QHBoxLayout(box);row.setContentsMargins(12,10,12,10);icon=QLabel();icon.setPixmap(awesome_icon(icon_name,app_accent_color().name()).pixmap(18,18));text=QVBoxLayout();text.setSpacing(1);name=QLabel(title);name.setStyleSheet("font-weight:650;");desc=QLabel(detail);desc.setObjectName("muted");desc.setWordWrap(True);text.addWidget(name);text.addWidget(desc);row.addWidget(icon);row.addLayout(text,1);grid.addWidget(box,index//2,index%2)
+        body.addWidget(formats)
 
-        preview=QGroupBox("Context menu example · JPEG file");preview_layout=QHBoxLayout(preview);preview_layout.setContentsMargins(14,12,14,12);brand=QLabel();brand.setPixmap(make_app_icon(34).pixmap(34,34));preview_text=QVBoxLayout();preview_text.setSpacing(2);preview_title=QLabel("OS Widgets");preview_title.setStyleSheet("font-weight:700;");preview_items=QLabel("Convert to PNG image   ·   WebP image   ·   PDF document");preview_items.setObjectName("muted");preview_text.addWidget(preview_title);preview_text.addWidget(preview_items);preview_layout.addWidget(brand);preview_layout.addLayout(preview_text,1);layout.addWidget(preview)
-        privacy=QLabel("Conversion runs locally. Office-to-PDF and Office-to-text conversions preserve document content but may simplify advanced page layout. Media conversion uses the FFmpeg binary packaged with OS Widgets.");privacy.setObjectName("muted");privacy.setWordWrap(True);layout.addWidget(privacy);layout.addStretch()
+        preview=QGroupBox("Context menu example · JPEG file");preview_layout=QHBoxLayout(preview);preview_layout.setContentsMargins(14,12,14,12);brand=QLabel();brand.setPixmap(make_app_icon(34).pixmap(34,34));preview_text=QVBoxLayout();preview_text.setSpacing(2);preview_title=QLabel("OS Widgets");preview_title.setStyleSheet("font-weight:700;");preview_items=QLabel("Convert to PNG image   ·   WebP image   ·   PDF document");preview_items.setObjectName("muted");preview_text.addWidget(preview_title);preview_text.addWidget(preview_items);preview_layout.addWidget(brand);preview_layout.addLayout(preview_text,1);body.addWidget(preview)
+        privacy=QLabel("Conversion runs locally. Office-to-PDF and Office-to-text conversions preserve document content but may simplify advanced page layout. Media conversion uses the FFmpeg binary packaged with OS Widgets.");privacy.setObjectName("muted");privacy.setWordWrap(True);body.addWidget(privacy);body.addStretch();scroll.setWidget(host);layout.addWidget(scroll,1)
         if not IS_WINDOWS:enabled.setEnabled(False)
-        self.controls["general:file_converter"]=enabled
+        self.controls["general:file_converter"]=enabled;self.controls["general:file_converter_quality"]=quality
         return page
 
     def build_appearance_page(self) -> QWidget:
@@ -4983,7 +5138,8 @@ class SettingsPanel(QDialog):
         quiet = QLabel("Starts quietly in the notification area and restores the exact saved widget layout.")
         quiet.setObjectName("muted"); quiet.setWordWrap(True)
         mode_row=QHBoxLayout(); mode_row.addWidget(QLabel("Performance mode")); mode=QComboBox(); mode.addItem("Balanced — recommended","balanced"); mode.addItem("Eco — fewer background updates","eco"); mode.addItem("Responsive — faster monitoring","responsive"); mode.setCurrentIndex(max(0,mode.findData(str(cfg.get("performance_mode","balanced"))))); mode_row.addWidget(mode,1)
-        card_layout.addWidget(startup); card_layout.addWidget(quiet); card_layout.addLayout(mode_row)
+        efficiency=QLabel("Adaptive timers reduce clock, network, battery and desktop-maintenance work when live updates are not needed.");efficiency.setObjectName("muted");efficiency.setWordWrap(True)
+        card_layout.addWidget(startup); card_layout.addWidget(quiet); card_layout.addLayout(mode_row);card_layout.addWidget(efficiency)
         self.controls["general:startup"] = startup; self.controls["general:performance"] = mode
         layout.addWidget(card)
         reset_group = QGroupBox("Reset")
@@ -5010,6 +5166,7 @@ class SettingsPanel(QDialog):
         host_layout.setContentsMargins(1, 4, 7, 4); host_layout.setSpacing(7)
         checks = (
             ("platform", "Windows version"),
+            ("signature", "Authenticode and SmartScreen readiness"),
             ("gpu", "GPU PDH counters"),
             ("disks", "Storage partitions and usage"),
             ("battery", "Laptop battery detection"),
@@ -5171,6 +5328,7 @@ class SettingsPanel(QDialog):
             if not ok and IS_WINDOWS:
                 QMessageBox.warning(self, APP_NAME, f"Windows startup could not be updated.\n\n{error}")
                 self.draft["general"]["startup"] = old_startup
+        self.draft["general"]["file_converter_quality"] = str(self.controls["general:file_converter_quality"].currentData())
         requested_converter = self.controls["general:file_converter"].isChecked() and IS_WINDOWS
         old_converter = bool(STORE.data["general"].get("file_converter_enabled", False))
         ok, error = set_file_converter_context_menu(requested_converter) if IS_WINDOWS else (not requested_converter, "")
@@ -5254,16 +5412,16 @@ class WidgetManager(QObject):
         self.alert_queue: deque[tuple[str, str, str, float, float]] = deque()
         self.media_player = None; self.audio_output = None
         self.executor = ThreadPoolExecutor(max_workers=3, thread_name_prefix="OSWidgets")
-        self.clock_timer = QTimer(self); self.clock_timer.setTimerType(Qt.TimerType.CoarseTimer)
-        self.clock_timer.setInterval(1000); self.clock_timer.timeout.connect(self.tick_clocks); self.clock_timer.start()
+        self.clock_timer = QTimer(self); self.clock_timer.setTimerType(Qt.TimerType.CoarseTimer); self.clock_timer.timeout.connect(self.tick_clocks)
         self.desktop_level_timer = QTimer(self); self.desktop_level_timer.setTimerType(Qt.TimerType.VeryCoarseTimer)
-        self.desktop_level_timer.setInterval(3000); self.desktop_level_timer.timeout.connect(self.maintain_desktop_level); self.desktop_level_timer.start()
+        self.desktop_level_timer.setInterval(6000); self.desktop_level_timer.timeout.connect(self.maintain_desktop_level); self.desktop_level_timer.start()
         if IS_WINDOWS:
             wanted = bool(STORE.data["general"].get("file_converter_enabled", False))
             if wanted != file_converter_context_menu_enabled():
                 set_file_converter_context_menu(wanted)
         self.tray = self.create_tray()
         self.create_enabled_widgets()
+        self.restart_clock_timer()
 
     def create_tray(self) -> QSystemTrayIcon:
         tray = QSystemTrayIcon(make_app_icon(), self)
@@ -5495,6 +5653,7 @@ class WidgetManager(QObject):
             widget.save_geometry()
             widget.hide()
             widget.deleteLater()
+        self.restart_clock_timer()
         STORE.save()
         QTimer.singleShot(0, self.rebuild_tray_menu)
 
@@ -5505,6 +5664,14 @@ class WidgetManager(QObject):
     def hide_all(self) -> None:
         for key in list(STORE.data["widgets"]):
             self.set_enabled(key, False)
+
+    def restart_clock_timer(self) -> None:
+        clocks=[widget for widget in self.widgets.values() if isinstance(widget,ClockWidget) and widget.isVisible()]
+        if not clocks:
+            self.clock_timer.stop();return
+        if any(bool(widget.config.get("show_seconds",True)) for widget in clocks):interval=1000
+        else:interval=10000 if performance_mode()=="eco" else (2000 if performance_mode()=="responsive" else 5000)
+        if self.clock_timer.interval()!=interval or not self.clock_timer.isActive():self.clock_timer.start(interval)
 
     def tick_clocks(self) -> None:
         for widget in self.widgets.values():
@@ -5526,7 +5693,7 @@ class WidgetManager(QObject):
 
     def apply_settings(self, reset_layout: bool = False) -> None:
         self.app.setStyleSheet(app_stylesheet()); self.app.setWindowIcon(make_app_icon()); self.tray.setIcon(make_app_icon())
-        self.desktop_level_timer.setInterval(5000 if performance_mode()=="eco" else (2000 if performance_mode()=="responsive" else 3000))
+        self.desktop_level_timer.setInterval(12000 if performance_mode()=="eco" else (3000 if performance_mode()=="responsive" else 6000))
         if reset_layout:
             for widget in list(self.widgets.values()):
                 widget.hide(); widget.deleteLater()
@@ -5573,6 +5740,7 @@ class WidgetManager(QObject):
                     widget.config = cfg; widget.restart_timer(); widget.hide()
             elif key in self.widgets:
                 self.set_enabled(key, False)
+        self.restart_clock_timer()
         self.rebuild_tray_menu()
 
     def quit(self) -> None:
@@ -5613,8 +5781,12 @@ def converter_package_self_test(folder: str | Path) -> int:
         with _wave.open(str(audio),"w") as handle:
             handle.setnchannels(1);handle.setsampwidth(2);handle.setframerate(rate)
             handle.writeframes(b"".join(_struct.pack("<h",int(8000*_math.sin(2*_math.pi*440*i/rate))) for i in range(rate//4)))
-        outputs=(convert_file(image,"jpg"),convert_file(text,"pdf"),convert_file(text,"docx"),convert_file(table,"xlsx"),convert_file(table,"json"),convert_file(audio,"mp3"))
-        return 0 if all(path.exists() and path.stat().st_size>0 for path in outputs) else 41
+        import imageio_ffmpeg
+        video=root/"converter-test.mp4";ffmpeg=imageio_ffmpeg.get_ffmpeg_exe();flags=subprocess.CREATE_NO_WINDOW if IS_WINDOWS and hasattr(subprocess,"CREATE_NO_WINDOW") else 0
+        subprocess.run([ffmpeg,"-hide_banner","-loglevel","error","-y","-f","lavfi","-i","color=c=blue:s=160x90:d=0.4","-c:v","libx264","-pix_fmt","yuv420p",str(video)],check=True,creationflags=flags)
+        outputs=(convert_file(image,"jpg"),convert_file(image,"avif"),convert_file(image,"heic"),convert_file(image,"jp2"),convert_file(text,"pdf"),convert_file(text,"docx"),convert_file(text,"odt"),convert_file(text,"epub"),convert_file(table,"xlsx"),convert_file(table,"json"),convert_file(table,"yaml"),convert_file(table,"ods"),convert_file(audio,"mp3"),convert_file(audio,"opus"),convert_file(audio,"aiff"),convert_file(video,"webm"),convert_file(video,"ts"))
+        format_count=len({target for extension in CONVERTER_SOURCE_EXTENSIONS for target in converter_targets_for(extension)})
+        return 0 if len(CONVERTER_SOURCE_EXTENSIONS)>=70 and format_count>=40 and all(path.exists() and path.stat().st_size>0 for path in outputs) else 41
     except Exception:
         return 42
 
@@ -5622,7 +5794,7 @@ def converter_package_self_test(folder: str | Path) -> int:
 def package_self_test(expect_defaults: bool = False) -> int:
     """Small, non-interactive check used by the Windows packaging workflow."""
     try:
-        if APP_VERSION != "1.3.0" or SETTINGS_SCHEMA_VERSION != 2:
+        if APP_VERSION != "1.4.0-dev" or SETTINGS_SCHEMA_VERSION != 2:
             return 20
         if expect_defaults:
             defaults = default_settings()
@@ -5675,14 +5847,10 @@ def main() -> int:
         if installed:
             try:
                 import winreg
-                path = r"Software\Classes\SystemFileAssociations\.jpg\shell\OSWidgets\shell"
-                key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, path)
-                children=[]; index=0
-                while True:
-                    try:children.append(winreg.EnumKey(key,index));index+=1
-                    except OSError:break
-                winreg.CloseKey(key)
-                submenu_valid = len(children) == len(converter_targets_for(".jpg"))
+                path = r"Software\Classes\SystemFileAssociations\.jpg\shell\OSWidgets"
+                key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, path);subcommands,_=winreg.QueryValueEx(key,"SubCommands");winreg.CloseKey(key)
+                commands=[value for value in str(subcommands).split(";") if value]
+                submenu_valid = len(commands) == len(converter_targets_for(".jpg")) and all(value.startswith("OSWidgets.convert.") for value in commands)
             except Exception:
                 submenu_valid = False
         removed, _error = set_file_converter_context_menu(False)

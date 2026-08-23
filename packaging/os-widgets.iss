@@ -1,5 +1,5 @@
 #define MyAppName "OS Widgets"
-#define MyAppVersion "1.3.0"
+#define MyAppVersion "1.4.0-dev"
 #define MyAppPublisher "Comet Suite"
 #define MyAppURL "https://github.com/Comet-Suite/os-widgets-windows"
 #define MyAppExeName "OS-Widgets.exe"
@@ -30,11 +30,11 @@ ArchitecturesInstallIn64BitMode=x64compatible
 CloseApplications=yes
 RestartApplications=no
 MinVersion=10.0
-VersionInfoVersion=1.3.0.0
+VersionInfoVersion=1.4.0.0
 VersionInfoCompany={#MyAppPublisher}
 VersionInfoDescription=OS Widgets Windows installer
 VersionInfoProductName={#MyAppName}
-VersionInfoProductVersion=1.3.0.0
+VersionInfoProductVersion=1.4.0.0
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"

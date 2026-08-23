@@ -5,14 +5,16 @@ from PyInstaller.utils.hooks import collect_all, collect_data_files
 ROOT = Path(SPECPATH).parent
 qta_datas, qta_binaries, qta_hidden = collect_all('qtawesome')
 ffmpeg_datas, ffmpeg_binaries, ffmpeg_hidden = collect_all('imageio_ffmpeg')
+heif_datas, heif_binaries, heif_hidden = collect_all('pillow_heif')
+avif_datas, avif_binaries, avif_hidden = collect_all('pillow_avif')
 tz_datas = collect_data_files('tzdata')
 
 a = Analysis(
     [str(ROOT / 'os_widgets.py')],
     pathex=[],
-    binaries=qta_binaries + ffmpeg_binaries,
-    datas=qta_datas + ffmpeg_datas + tz_datas,
-    hiddenimports=qta_hidden + ffmpeg_hidden + ['PySide6.QtMultimedia', 'PySide6.QtMultimediaWidgets'],
+    binaries=qta_binaries + ffmpeg_binaries + heif_binaries + avif_binaries,
+    datas=qta_datas + ffmpeg_datas + heif_datas + avif_datas + tz_datas,
+    hiddenimports=qta_hidden + ffmpeg_hidden + heif_hidden + avif_hidden + ['PySide6.QtMultimedia', 'PySide6.QtMultimediaWidgets'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
