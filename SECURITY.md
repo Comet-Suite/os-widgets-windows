@@ -14,7 +14,7 @@
 If you find a security issue (e.g., unsafe file handling, registry injection, network request issue):
 
 1. **Do not** open a public issue.
-2. Email: **security@comet-suite.example** (or open a private security advisory on GitHub).
+2. Email: **m39776401@gmail.com** (or open a private security advisory on GitHub).
 3. Include: OS Widgets version, Windows version, reproduction steps, impact.
 
 We aim to acknowledge within 72 hours and release a fix within 14 days for critical issues.

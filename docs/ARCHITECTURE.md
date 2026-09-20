@@ -1,6 +1,8 @@
-# Architecture — OS Widgets 1.4.0
+# Architecture — OS Widgets 1.4.0 FINAL
 
-OS Widgets is a **single-file** Windows desktop app (`os_widgets.py`, ~369 KB) built with PySide6.
+Contact: m39776401@gmail.com
+
+OS Widgets is a **single-file** Windows desktop app (`os_widgets.py`, ~369 KB) built with PySide6. Version 1.4.0 FINAL.
 
 ## Single-file principles
 

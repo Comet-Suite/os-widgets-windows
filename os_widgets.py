@@ -3,6 +3,8 @@
 OS Widgets — Your desktop. Your widgets.
 
 A single-file Windows desktop widget application.
+Version: 1.4.0 FINAL
+Contact: m39776401@gmail.com
 
 Install:
     py -m pip install -r requirements.txt
@@ -160,6 +162,7 @@ except ImportError:
 APP_NAME = "OS Widgets"
 TAGLINE = "Your desktop. Your widgets."
 APP_VERSION = "1.4.0"
+APP_CONTACT = "m39776401@gmail.com"
 SETTINGS_SCHEMA_VERSION = 2
 IS_WINDOWS = sys.platform == "win32"
 
@@ -5401,7 +5404,7 @@ class SettingsPanel(QDialog):
         self.nav.currentRowChanged.connect(self.page_changed)
 
         footer = QHBoxLayout(); footer.setSpacing(9)
-        footer_icon=QLabel();footer_icon.setPixmap(awesome_icon("fa6s.shield-halved",palette_colors()["muted"].name()).pixmap(13,13));footer_note=QLabel("Settings stay on this device");footer_note.setObjectName("muted");footer.addWidget(footer_icon);footer.addWidget(footer_note);footer.addStretch()
+        footer_icon=QLabel();footer_icon.setPixmap(awesome_icon("fa6s.shield-halved",palette_colors()["muted"].name()).pixmap(13,13));footer_note=QLabel(f"Settings stay on this device · {APP_CONTACT} · v{APP_VERSION} FINAL");footer_note.setObjectName("muted");footer.addWidget(footer_icon);footer.addWidget(footer_note);footer.addStretch()
         cancel = QPushButton("Cancel")
         cancel.setIcon(awesome_icon("fa6s.xmark"))
         cancel.clicked.connect(self.reject)
@@ -6032,7 +6035,7 @@ class SettingsPanel(QDialog):
     def copy_diagnostics_report(self) -> None:
         if not self.diagnostic_report:
             return
-        lines = [f"{APP_NAME} {APP_VERSION} — Windows diagnostics", dt.datetime.now().astimezone().isoformat(), ""]
+        lines = [f"{APP_NAME} {APP_VERSION} FINAL — Windows diagnostics", f"Contact: {APP_CONTACT}", dt.datetime.now().astimezone().isoformat(), ""]
         for key, value in self.diagnostic_report.items():
             title = self.diagnostic_rows[key].title_label.text() if key in self.diagnostic_rows else key
             lines.append(f"[{str(value.get('status', 'info')).upper()}] {title}: {value.get('detail', '')}")
@@ -6229,7 +6232,7 @@ class WidgetManager(QObject):
 
     def create_tray(self) -> QSystemTrayIcon:
         tray = QSystemTrayIcon(make_app_icon(), self)
-        tray.setToolTip(f"{APP_NAME} — {TAGLINE}")
+        tray.setToolTip(f"{APP_NAME} {APP_VERSION} FINAL — {TAGLINE} · {APP_CONTACT}")
         tray.activated.connect(self.tray_activated)
         self.rebuild_tray_menu(tray)
         if QSystemTrayIcon.isSystemTrayAvailable():

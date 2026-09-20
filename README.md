@@ -211,6 +211,14 @@ wallpapers/                Dark/light 4K + portrait
 .github/workflows/         Windows release workflow (manual + tag)
 ```
 
+## Contact
+
+- **Email:** [m39776401@gmail.com](mailto:m39776401@gmail.com)
+- **Issues:** [GitHub Issues](https://github.com/Comet-Suite/os-widgets-windows/issues)
+- **Releases:** [v1.4.0 Final](https://github.com/Comet-Suite/os-widgets-windows/releases/tag/v1.4.0)
+
+For security reports, please use the contact email above.
+
 ## License
 
 MIT — see [LICENSE](LICENSE). Third-party notices in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
@@ -218,5 +226,5 @@ MIT — see [LICENSE](LICENSE). Third-party notices in [THIRD_PARTY_NOTICES.md](
 ---
 
 <div align="center">
-  <sub>Built by <a href="https://github.com/Comet-Suite">Comet Suite</a> · Single-file · Offline-first · Windows-native</sub>
+  <sub>Built by <a href="https://github.com/Comet-Suite">Comet Suite</a> · Contact: m39776401@gmail.com · v1.4.0 FINAL · Single-file · Offline-first · Windows-native</sub>
 </div>

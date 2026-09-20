@@ -1,6 +1,6 @@
 #define MyAppName "OS Widgets"
-#define MyAppVersion "1.4.0"
-#define MyAppPublisher "Comet Suite"
+#define MyAppVersion "1.4.0 FINAL"
+#define MyAppPublisher "Comet Suite · m39776401@gmail.com"
 #define MyAppURL "https://github.com/Comet-Suite/os-widgets-windows"
 #define MyAppExeName "OS-Widgets.exe"
 
@@ -32,9 +32,11 @@ RestartApplications=no
 MinVersion=10.0
 VersionInfoVersion=1.4.0.0
 VersionInfoCompany={#MyAppPublisher}
-VersionInfoDescription=OS Widgets Windows installer
+VersionInfoDescription=OS Widgets Windows installer v1.4.0 FINAL · Contact m39776401@gmail.com
 VersionInfoProductName={#MyAppName}
 VersionInfoProductVersion=1.4.0.0
+VersionInfoTextVersion=1.4.0 FINAL
+VersionInfoCopyright=Copyright © 2026 Comet Suite · m39776401@gmail.com
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"

@@ -1,6 +1,7 @@
 $ErrorActionPreference = "Stop"
 $PSNativeCommandUseErrorActionPreference = $true
-$Version = "1.4.0"
+$Version = "1.4.0 FINAL"
+$Contact = "m39776401@gmail.com"
 $Root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 Set-Location $Root
 
@@ -77,6 +78,7 @@ Copy-Item "dist/OS-Widgets.exe" $Portable
 Copy-Item "motivational-quotes.txt","README.md","THIRD_PARTY_NOTICES.md" $Portable
 @"
 OS Widgets $Version — Windows x64 Portable
+Contact: $Contact
 
 1. Extract every file from this ZIP.
 2. Run OS-Widgets.exe.
@@ -84,6 +86,7 @@ OS Widgets $Version — Windows x64 Portable
 4. If Microsoft Defender SmartScreen appears, choose More info > Run anyway only after verifying the SHA-256 checksum from the release page.
 
 The executable is currently unsigned. Windows may display a reputation warning.
+Contact: $Contact for support.
 "@ | Set-Content (Join-Path $Portable "START-HERE.txt") -Encoding UTF8
 Compress-Archive -Path "$Portable/*" -DestinationPath "$Release/OS-Widgets-$Version-Windows-x64-Portable.zip" -CompressionLevel Optimal -Force
 

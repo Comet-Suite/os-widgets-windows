@@ -1,4 +1,6 @@
-# Windows code signing and SmartScreen
+# Windows code signing and SmartScreen — OS Widgets v1.4.0 FINAL
+
+Contact: m39776401@gmail.com
 
 Windows SmartScreen recognition cannot be declared by an application. It depends on a valid Authenticode signature and reputation managed by Microsoft.
 

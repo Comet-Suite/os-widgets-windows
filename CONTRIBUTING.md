@@ -2,6 +2,8 @@
 
 Thanks for helping make OS Widgets more polished, lightweight, and useful!
 
+**Contact:** [m39776401@gmail.com](mailto:m39776401@gmail.com) · **Version:** v1.4.0 FINAL
+
 ## Development setup
 
 ```powershell

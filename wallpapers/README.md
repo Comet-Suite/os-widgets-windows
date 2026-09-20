@@ -1,4 +1,6 @@
-# OS Widgets Wallpapers
+# OS Widgets Wallpapers — v1.4.0 FINAL
+
+Contact: m39776401@gmail.com
 
 Official desktop and portrait wallpapers designed to complement OS Widgets in dark and light themes.
 
