@@ -1,6 +1,10 @@
-# Changelog
+# Changelog — OS Widgets v1.4.0 FINAL
 
-## 1.4.0 — 2026-09-20 — Final stable
+Contact: m39776401@gmail.com · [README.md](README.md) · [Releases](https://github.com/Comet-Suite/os-widgets-windows/releases)
+
+> **Note:** This file is at the repository root as `CHANGELOG.md`. GitHub's spotlight tabs natively show README, Contributing, Code of Conduct, License, Security — CHANGELOG.md is linked from README badges, CODE_OF_CONDUCT.md, and SUPPORT.md for visibility.
+
+## 1.4.0 — 2026-09-20 — Final stable — v1.4.0 FINAL
 
 ### Added
 - **Code Converter** — new family with 35+ programming extensions (Python, JavaScript/TypeScript, Java, C/C++, C#, Go, Rust, PHP, Ruby, Swift, CSS/SCSS, SQL, Shell, PowerShell, Jupyter and more)

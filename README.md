@@ -6,17 +6,21 @@
 
 [![Windows build](https://github.com/Comet-Suite/os-widgets-windows/actions/workflows/windows-release.yml/badge.svg)](https://github.com/Comet-Suite/os-widgets-windows/actions/workflows/windows-release.yml)
 [![Release](https://img.shields.io/github/v/release/Comet-Suite/os-widgets-windows?label=release&color=2490ee)](https://github.com/Comet-Suite/os-widgets-windows/releases/latest)
+[![Changelog](https://img.shields.io/badge/Changelog-v1.4.0%20FINAL-9b8afb)](CHANGELOG.md)
 [![Downloads](https://img.shields.io/github/downloads/Comet-Suite/os-widgets-windows/total?color=2ea043)](https://github.com/Comet-Suite/os-widgets-windows/releases)
 [![License](https://img.shields.io/github/license/Comet-Suite/os-widgets-windows?color=9b8afb)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.10%20--%203.13-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Windows 10/11](https://img.shields.io/badge/Windows-10%20%7C%2011-2490ee?logo=windows11&logoColor=white)](#requirements)
 [![Code style](https://img.shields.io/badge/code%20style-single--file-black)](os_widgets.py)
+[![Contact](https://img.shields.io/badge/Contact-m39776401@gmail.com-EA4335?logo=gmail&logoColor=white)](mailto:m39776401@gmail.com)
 
-**A polished, lightweight, single-file desktop widget suite for Windows.**
+**A polished, lightweight, single-file desktop widget suite for Windows. v1.4.0 FINAL**
 
-[Download](https://github.com/Comet-Suite/os-widgets-windows/releases/latest) · [Features](#features) · [File Converter](#file-converter) · [Screenshots](#screenshots) · [Documentation](#documentation) · [Contributing](CONTRIBUTING.md)
+[Download](https://github.com/Comet-Suite/os-widgets-windows/releases/latest) · [Changelog](CHANGELOG.md) · [Features](#features) · [File Converter](#file-converter) · [Screenshots](#screenshots) · [Documentation](#documentation) · [Contributing](CONTRIBUTING.md) · [Contact](mailto:m39776401@gmail.com)
 
 </div>
+
+> **Spotlight tabs:** GitHub shows **README**, **Contributing**, **Code of Conduct**, **License**, **Security** as tabs when those files exist. **CHANGELOG.md** is not natively shown as a spotlight tab by GitHub yet (feature requested), but it is linked here, in the badges above, and in [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) and [SUPPORT.md](SUPPORT.md) which *do* appear as spotlight tabs. The file lives at the repository root: [`CHANGELOG.md`](CHANGELOG.md).
 
 ---
 
