@@ -1,5 +1,5 @@
 #define MyAppName "OS Widgets"
-#define MyAppVersion "1.4.0-dev"
+#define MyAppVersion "1.4.0"
 #define MyAppPublisher "Comet Suite"
 #define MyAppURL "https://github.com/Comet-Suite/os-widgets-windows"
 #define MyAppExeName "OS-Widgets.exe"

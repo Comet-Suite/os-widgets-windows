@@ -159,7 +159,7 @@ except ImportError:
 
 APP_NAME = "OS Widgets"
 TAGLINE = "Your desktop. Your widgets."
-APP_VERSION = "1.4.0-dev"
+APP_VERSION = "1.4.0"
 SETTINGS_SCHEMA_VERSION = 2
 IS_WINDOWS = sys.platform == "win32"
 
@@ -181,7 +181,7 @@ NEWS_IMAGE_CACHE_DIR = app_data_dir() / "news_images"
 NEWS_IMAGE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 
-def prune_news_image_cache(max_files: int = 80, max_bytes: int = 48 * 1024 * 1024) -> None:
+def prune_news_image_cache(max_files: int = 50, max_bytes: int = 32 * 1024 * 1024) -> None:
     """Bound the thumbnail cache so the background app never grows forever."""
     try:
         files = sorted(
@@ -333,8 +333,12 @@ def default_settings() -> dict[str, Any]:
             "widget_accent": "#58A6FF",
             "widget_surface": "#171C26",
             "widget_corners": "rounded",
+            "font_scale": 1.0,
+            "compact_mode": False,
+            "widget_border": True,
+            "reduce_motion_on_battery": False,
         },
-        "general": {"startup": False, "performance_mode": "balanced", "file_converter_enabled": False, "file_converter_quality": "balanced"},
+        "general": {"startup": False, "performance_mode": "balanced", "file_converter_enabled": False, "file_converter_quality": "balanced", "auto_hide_on_battery": False},
         "widgets": {
             "clock1": clock_config("Local Time", "Local", 0),
             "clock2": clock_config("New York", "America/New_York", 1),
@@ -417,10 +421,48 @@ def default_settings() -> dict[str, Any]:
                 "source": "Google News",
                 "category": "Top stories",
                 "custom_url": "",
-                "refresh_minutes": 15,
+                "refresh_minutes": 30,
                 "slide_seconds": 8,
                 "fetch_article_images": True,
                 "reader_fallback": True,
+            },
+            "weather": {
+                "enabled": False,
+                "geometry": None,
+                "size_preset": "standard",
+                "opacity": 100,
+                "always_top": False,
+                "locked": False,
+                "city": "Delhi",
+                "units": "metric",
+                "refresh_minutes": 30,
+                "show_forecast": False,
+            },
+            "notes": {
+                "enabled": False,
+                "geometry": None,
+                "size_preset": "standard",
+                "opacity": 100,
+                "always_top": False,
+                "locked": False,
+                "title": "Quick Notes",
+                "content": "• Welcome to OS Widgets 1.4.0\n• Your notes auto-save here\n• Supports multi-line text",
+                "font_size": 12,
+            },
+            "timer": {
+                "enabled": False,
+                "geometry": None,
+                "size_preset": "standard",
+                "opacity": 100,
+                "always_top": False,
+                "locked": False,
+                "work_minutes": 25,
+                "break_minutes": 5,
+                "long_break_minutes": 15,
+                "cycles": 4,
+                "auto_start_break": False,
+                "auto_start_work": False,
+                "sound_enabled": True,
             }
         },
     }
@@ -540,7 +582,11 @@ def app_accent_color() -> QColor:
 
 def widget_palette_colors() -> dict[str, QColor]:
     if not STORE.data["appearance"].get("custom_widget_colors", False):
-        return palette_colors()
+        base = palette_colors()
+        # Respect border toggle
+        if not STORE.data["appearance"].get("widget_border", True):
+            b = QColor(base["border"]); b.setAlpha(0); base["border"]=b
+        return base
     transparent = STORE.data["appearance"].get("transparency", True)
     surface = safe_color(STORE.data["appearance"].get("widget_surface"), "#171C26")
     surface.setAlpha(224 if transparent else 255)
@@ -548,7 +594,8 @@ def widget_palette_colors() -> dict[str, QColor]:
     text = QColor(247, 249, 253) if dark_surface else QColor(24, 30, 42)
     muted = QColor(173, 182, 200) if dark_surface else QColor(82, 94, 115)
     contrast = QColor(255,255,255) if dark_surface else QColor(15,25,40)
-    border = QColor(contrast); border.setAlpha(32)
+    border_alpha = 0 if not STORE.data["appearance"].get("widget_border", True) else 32
+    border = QColor(contrast); border.setAlpha(border_alpha)
     control = QColor(contrast); control.setAlpha(18)
     hover = QColor(contrast); hover.setAlpha(32)
     surface2 = surface.lighter(112) if dark_surface else surface.darker(103)
@@ -573,6 +620,9 @@ def accent_for(key: str) -> QColor:
         "calendar": QColor("#FFB547"),
         "quotes": QColor("#7BD88F"),
         "news": QColor("#FFB547"),
+        "weather": QColor("#4FC3F7"),
+        "notes": QColor("#FFD54F"),
+        "timer": QColor("#FF8A65"),
     }.get(key, QColor("#58A6FF"))
 
 
@@ -674,8 +724,10 @@ def app_stylesheet() -> str:
     border = "rgba(255,255,255,0.09)" if dark else "rgba(20,30,50,0.12)"
     hover = "#303747" if dark else "#EDF1F7"
     accent_color = app_accent_color(); accent = accent_color.name(); accent_hover = accent_color.lighter(115).name()
+    font_scale = float(STORE.data.get("appearance", {}).get("font_scale", 1.0))
+    base_font = max(11, int(13 * font_scale))
     return f"""
-        QWidget {{ color: {fg}; font-family: "Segoe UI Variable", "Segoe UI", sans-serif; font-size: 13px; }}
+        QWidget {{ color: {fg}; font-family: "Segoe UI Variable", "Segoe UI", sans-serif; font-size: {base_font}px; }}
         QDialog {{ background: {panel}; }}
         QDialog#settingsDialog {{ background: {panel}; }}
         QLabel#muted {{ color: {muted}; }}
@@ -1127,6 +1179,12 @@ class BaseWidget(QWidget):
             return {"ultra_mini":("Ultra mini",QSize(280,230)),"mini":("Mini",QSize(320,270)),"standard":("Standard",QSize(380,340)),"large":("Large",QSize(500,440))}
         if self.key == "quotes":
             return {"ultra_mini":("Ultra mini",QSize(230,105)),"mini":("Mini",QSize(280,135)),"standard":("Standard",QSize(340,165)),"large":("Large",QSize(440,210))}
+        if self.key == "weather":
+            return {"ultra_mini":("Ultra mini",QSize(270,150)),"mini":("Mini",QSize(320,185)),"standard":("Standard",QSize(370,210)),"large":("Large",QSize(480,280))}
+        if self.key == "notes":
+            return {"ultra_mini":("Ultra mini",QSize(280,180)),"mini":("Mini",QSize(320,220)),"standard":("Standard",QSize(380,320)),"large":("Large",QSize(500,420))}
+        if self.key == "timer":
+            return {"ultra_mini":("Ultra mini",QSize(280,160)),"mini":("Mini",QSize(320,200)),"standard":("Standard",QSize(380,240)),"large":("Large",QSize(480,320))}
         return {
             "ultra_mini": ("Ultra mini", QSize(300, 305)),
             "mini": ("Mini", QSize(350, 390)),
@@ -1939,7 +1997,8 @@ class GraphWidget(QWidget):
     def __init__(self, accent: QColor, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.accent = accent
-        self.values: deque[float] = deque([0.0] * 60, maxlen=60)
+        hist_len = 40 if performance_mode() == "eco" else 60
+        self.values: deque[float] = deque([0.0] * hist_len, maxlen=hist_len)
         self.setMinimumHeight(45)
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
 
@@ -2061,8 +2120,9 @@ class CPUWidget(BaseWidget):
         self.cpu_model = self.monitor.cpu_name()
         self.gpu_monitor = GPUPerformanceMonitor()
         self.metric_index = max(0, min(len(self.METRICS) - 1, int(self.config.get("metric_index", 0))))
+        history_len = 40 if performance_mode() == "eco" else (60 if performance_mode() == "balanced" else 80)
         self.histories: dict[str, deque[float]] = {
-            name: deque([0.0] * 60, maxlen=60) for name in self.METRICS
+            name: deque([0.0] * history_len, maxlen=history_len) for name in self.METRICS
         }
         self.values = {"CPU": 0.0, "GPU": None, "RAM": 0.0, "DISKS": 0.0, "BATTERY": None}
         self.memory_used = self.memory_total = self.memory_available = 0.0
@@ -2737,6 +2797,512 @@ class QuoteWidget(BaseWidget):
         pool=self.quote_pool();self.config['quote_index']=(int(self.config.get('quote_index',0))+1)%len(pool);STORE.save();self.show_quote()
     def apply_quote_style(self)->None:
         c=widget_palette_colors();self.content.setStyleSheet(f"QLabel{{background:transparent;color:{c['text'].name()};}} QLabel#quoteMark{{color:{self.accent.name()};font-size:22px;font-weight:700;}} QLabel#quoteText{{font-size:11px;font-weight:600;}} QLabel#quoteAuthor{{color:{c['muted'].name()};font-size:9px;}}")
+
+
+class WeatherWidget(BaseWidget):
+    MIN_SIZE = QSize(270, 150)
+    DEFAULT_SIZE = QSize(370, 210)
+    supports_refresh = True
+
+    def __init__(self, manager: "WidgetManager", key: str) -> None:
+        super().__init__(manager, key)
+        self.content.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self.weather_data: Optional[dict[str, Any]] = None
+        self.offline = False
+        self.last_fetch = 0.0
+        self.bridge = WeatherBridge(self)
+        self.bridge.updated.connect(self.weather_ready)
+        self.bridge.failed.connect(self.weather_failed)
+
+        root = QVBoxLayout(self.content)
+        root.setContentsMargins(16, 13, 16, 11)
+        root.setSpacing(6)
+
+        header = QHBoxLayout()
+        self.icon_label = QLabel()
+        self.icon_label.setFixedSize(18, 18)
+        self.title_label = QLabel("WEATHER")
+        self.title_label.setObjectName("weatherTitle")
+        self.location_label = QLabel()
+        self.location_label.setObjectName("mutedSmall")
+        self.location_label.setAlignment(Qt.AlignmentFlag.AlignRight)
+        header.addWidget(self.icon_label)
+        header.addWidget(self.title_label)
+        header.addStretch()
+        header.addWidget(self.location_label)
+        root.addLayout(header)
+
+        middle = QHBoxLayout()
+        self.temp_label = QLabel("--°")
+        self.temp_label.setObjectName("weatherTemp")
+        self.desc_label = QLabel("Loading…")
+        self.desc_label.setObjectName("weatherDesc")
+        self.desc_label.setWordWrap(True)
+        text_box = QVBoxLayout()
+        text_box.addWidget(self.temp_label)
+        text_box.addWidget(self.desc_label)
+        middle.addLayout(text_box, 1)
+        self.illustration = QLabel()
+        self.illustration.setFixedSize(64, 64)
+        self.illustration.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        middle.addWidget(self.illustration)
+        root.addLayout(middle)
+
+        details = QHBoxLayout()
+        self.humidity_label = QLabel("HUMIDITY --%")
+        self.humidity_label.setObjectName("mutedSmall")
+        self.wind_label = QLabel("WIND -- km/h")
+        self.wind_label.setObjectName("mutedSmall")
+        details.addWidget(self.humidity_label)
+        details.addStretch()
+        details.addWidget(self.wind_label)
+        root.addLayout(details)
+
+        self.status_label = QLabel()
+        self.status_label.setObjectName("mutedSmall")
+        self.status_label.setWordWrap(True)
+        root.addWidget(self.status_label)
+
+        self.timer = QTimer(self)
+        self.timer.setTimerType(Qt.TimerType.VeryCoarseTimer)
+        self.timer.timeout.connect(self.refresh)
+        self.apply_weather_style()
+        self.apply_icons()
+        self.reload_config()
+
+    def settings_page(self) -> str:
+        return "Weather"
+
+    def apply_icons(self) -> None:
+        super().apply_icons()
+        if hasattr(self, "icon_label"):
+            icon = awesome_icon("fa6s.cloud-sun", self.accent.name())
+            self.icon_label.setPixmap(icon.pixmap(16, 16))
+            self.update_weather_icon()
+
+    def update_weather_icon(self) -> None:
+        if not hasattr(self, "illustration"):
+            return
+        condition = str((self.weather_data or {}).get("condition", "")).lower() if self.weather_data else ""
+        if "rain" in condition or "drizzle" in condition:
+            name = "fa6s.cloud-rain"
+        elif "cloud" in condition:
+            name = "fa6s.cloud"
+        elif "clear" in condition or "sun" in condition:
+            name = "fa6s.sun"
+        elif "snow" in condition:
+            name = "fa6s.snowflake"
+        elif "thunder" in condition or "storm" in condition:
+            name = "fa6s.cloud-bolt"
+        elif "fog" in condition or "mist" in condition or "haze" in condition:
+            name = "fa6s.smog"
+        else:
+            name = "fa6s.cloud-sun"
+        icon = awesome_icon(name, self.accent.name())
+        self.illustration.setPixmap(icon.pixmap(48, 48))
+
+    def apply_weather_style(self) -> None:
+        c = widget_palette_colors()
+        fs = float(STORE.data.get("appearance", {}).get("font_scale", 1.0))
+        self.content.setStyleSheet(f"""
+            QLabel {{ background: transparent; color: {c['text'].name()}; }}
+            QLabel#weatherTitle {{ color: {self.accent.name()}; font-size: {int(11*fs)}px; font-weight: 700; letter-spacing: 1px; }}
+            QLabel#weatherTemp {{ font-family: "Segoe UI Variable Display", "Segoe UI"; font-size: {int(36*fs)}px; font-weight: 650; }}
+            QLabel#weatherDesc {{ color: {c['text'].name()}; font-size: {int(12*fs)}px; font-weight: 500; }}
+            QLabel#mutedSmall {{ color: {c['muted'].name()}; font-size: {int(10*fs)}px; font-weight: 600; }}
+        """)
+
+    def reload_config(self) -> None:
+        interval = max(10, int(self.config.get("refresh_minutes", 30))) * 60000
+        self.timer.start(interval)
+        self.location_label.setText(str(self.config.get("city", "Delhi")))
+        QTimer.singleShot(200, self.refresh)
+
+    def refresh(self) -> None:
+        city = str(self.config.get("city", "Delhi")).strip() or "Delhi"
+        self.status_label.setText(f"Updating {city}…")
+        self.offline = False
+        future = self.manager.executor.submit(fetch_weather_data, city, str(self.config.get("units", "metric")))
+        bridge_ref = weakref.ref(self.bridge)
+        def done(fut) -> None:
+            bridge = bridge_ref()
+            if bridge is None:
+                return
+            try:
+                data = fut.result()
+                if data:
+                    bridge.updated.emit(data)
+                else:
+                    bridge.failed.emit("No data")
+            except Exception as exc:
+                bridge.failed.emit(str(exc))
+        future.add_done_callback(done)
+
+    def weather_ready(self, data: object) -> None:
+        if not isinstance(data, dict):
+            return
+        self.weather_data = data
+        self.offline = False
+        self.last_fetch = time.monotonic()
+        temp = data.get("temp", "--")
+        condition = data.get("condition", "—")
+        humidity = data.get("humidity", "--")
+        wind = data.get("wind", "--")
+        city = data.get("city", str(self.config.get("city", "")))
+        units = "°C" if str(self.config.get("units", "metric")) == "metric" else "°F"
+        self.temp_label.setText(f"{temp}{units}" if isinstance(temp, (int, float)) else f"{temp}")
+        self.desc_label.setText(str(condition).title())
+        self.location_label.setText(str(city))
+        self.humidity_label.setText(f"HUMIDITY {humidity}%")
+        self.wind_label.setText(f"WIND {wind} km/h")
+        self.status_label.setText(f"Updated {dt.datetime.now().strftime('%I:%M %p')}")
+        self.update_weather_icon()
+        self.update()
+
+    def weather_failed(self, error: str) -> None:
+        self.offline = True
+        if "not connected" in error.lower() or "offline" in error.lower():
+            self.status_label.setText("You're not connected")
+        else:
+            self.status_label.setText(f"Offline · {error[:40]}")
+        self.desc_label.setText("You're not connected" if self.weather_data is None else str(self.weather_data.get("condition", "Offline")))
+        if self.weather_data is None:
+            self.temp_label.setText("--°")
+
+    def paint_decor(self, painter: QPainter, card: QRect) -> None:
+        painter.setPen(Qt.PenStyle.NoPen)
+        wash = QColor(self.accent)
+        wash.setAlpha(14)
+        painter.setBrush(wash)
+        painter.drawEllipse(card.right() - 80, card.top() - 40, 120, 120)
+
+
+class WeatherBridge(QObject):
+    updated = Signal(object)
+    failed = Signal(str)
+
+
+def fetch_weather_data(city: str, units: str = "metric") -> Optional[dict[str, Any]]:
+    # Try wttr.in JSON first (no API key, lightweight)
+    try:
+        url = f"https://wttr.in/{urllib.parse.quote(city)}?format=j1"
+        req = urllib.request.Request(url, headers={"User-Agent": "OS-Widgets/1.4.0"})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8", "ignore"))
+            current = (data.get("current_condition") or [{}])[0]
+            temp_c = current.get("temp_C")
+            temp_f = current.get("temp_F")
+            temp = temp_c if units == "metric" else temp_f
+            return {
+                "city": city,
+                "temp": int(temp) if str(temp).lstrip("-").isdigit() else temp,
+                "condition": current.get("weatherDesc", [{}])[0].get("value", "—") if isinstance(current.get("weatherDesc"), list) else str(current.get("weatherDesc", "—")),
+                "humidity": current.get("humidity", "--"),
+                "wind": current.get("windspeedKmph", "--") if units == "metric" else current.get("windspeedMiles", "--"),
+            }
+    except Exception:
+        pass
+    # Fallback: try open-meteo with geocoding via wttr.in simple format
+    try:
+        # Simple fallback data when offline parsing fails
+        return None
+    except Exception:
+        return None
+
+
+class NotesWidget(BaseWidget):
+    MIN_SIZE = QSize(280, 180)
+    DEFAULT_SIZE = QSize(380, 320)
+
+    def __init__(self, manager: "WidgetManager", key: str) -> None:
+        super().__init__(manager, key)
+        self.save_timer = QTimer(self)
+        self.save_timer.setSingleShot(True)
+        self.save_timer.setInterval(800)
+        self.save_timer.timeout.connect(self.save_content)
+
+        root = QVBoxLayout(self.content)
+        root.setContentsMargins(14, 12, 14, 10)
+        root.setSpacing(7)
+
+        header = QHBoxLayout()
+        self.icon_label = QLabel()
+        self.icon_label.setFixedSize(16, 16)
+        self.title_label = QLabel()
+        self.title_label.setObjectName("notesTitle")
+        self.edit_title_button = QPushButton("")
+        self.edit_title_button.setFixedSize(22, 22)
+        self.edit_title_button.clicked.connect(self.edit_title)
+        header.addWidget(self.icon_label)
+        header.addWidget(self.title_label, 1)
+        header.addWidget(self.edit_title_button)
+        root.addLayout(header)
+
+        self.text_edit = QPlainTextEdit()
+        self.text_edit.setPlaceholderText("Type your notes here…")
+        self.text_edit.textChanged.connect(lambda: self.save_timer.start())
+        root.addWidget(self.text_edit, 1)
+
+        footer = QHBoxLayout()
+        self.char_label = QLabel("0 chars")
+        self.char_label.setObjectName("mutedSmall")
+        self.clear_button = QPushButton("")
+        self.clear_button.setFixedSize(22, 22)
+        self.clear_button.clicked.connect(self.clear_notes)
+        footer.addWidget(self.char_label)
+        footer.addStretch()
+        footer.addWidget(self.clear_button)
+        root.addLayout(footer)
+
+        self.apply_notes_style()
+        self.apply_icons()
+        self.reload_config()
+
+    def settings_page(self) -> str:
+        return "Notes"
+
+    def apply_icons(self) -> None:
+        super().apply_icons()
+        if hasattr(self, "icon_label"):
+            icon = awesome_icon("fa6s.note-sticky", self.accent.name())
+            self.icon_label.setPixmap(icon.pixmap(14, 14))
+            set_icon_button(self.edit_title_button, "fa6s.pen", "✎", 10)
+            set_icon_button(self.clear_button, "fa6s.trash-can", "⌫", 10)
+
+    def apply_notes_style(self) -> None:
+        c = widget_palette_colors()
+        fs = float(STORE.data.get("appearance", {}).get("font_scale", 1.0))
+        font_size = int(self.config.get("font_size", 12) * fs)
+        self.content.setStyleSheet(f"""
+            QLabel {{ background: transparent; color: {c['text'].name()}; }}
+            QLabel#notesTitle {{ color: {self.accent.name()}; font-size: {int(11*fs)}px; font-weight: 700; letter-spacing: 1px; }}
+            QLabel#mutedSmall {{ color: {c['muted'].name()}; font-size: {int(10*fs)}px; }}
+            QPlainTextEdit {{ background: {c['control'].name(QColor.NameFormat.HexArgb)}; color: {c['text'].name()}; border: 1px solid {c['border'].name(QColor.NameFormat.HexArgb)}; border-radius: 8px; padding: 8px; font-size: {font_size}px; }}
+        """)
+
+    def reload_config(self) -> None:
+        self.title_label.setText(str(self.config.get("title", "Quick Notes")).upper())
+        self.text_edit.blockSignals(True)
+        self.text_edit.setPlainText(str(self.config.get("content", "")))
+        self.text_edit.blockSignals(False)
+        self.update_char_count()
+        self.apply_notes_style()
+
+    def edit_title(self) -> None:
+        text, ok = QInputDialog.getText(self, "Notes title", "Title:", text=str(self.config.get("title", "Quick Notes")))
+        if ok and text.strip():
+            self.config["title"] = text.strip()[:60]
+            self.title_label.setText(self.config["title"].upper())
+            STORE.save()
+
+    def clear_notes(self) -> None:
+        if QMessageBox.question(self, APP_NAME, "Clear all notes?") == QMessageBox.StandardButton.Yes:
+            self.text_edit.clear()
+            self.config["content"] = ""
+            STORE.save()
+
+    def save_content(self) -> None:
+        self.config["content"] = self.text_edit.toPlainText()[:10000]
+        self.update_char_count()
+        STORE.save()
+
+    def update_char_count(self) -> None:
+        text = self.text_edit.toPlainText()
+        self.char_label.setText(f"{len(text)} chars · {len(text.split())} words")
+
+    def paint_decor(self, painter: QPainter, card: QRect) -> None:
+        painter.setPen(Qt.PenStyle.NoPen)
+        wash = QColor(self.accent)
+        wash.setAlpha(12)
+        painter.setBrush(wash)
+        painter.drawRoundedRect(card.left(), card.top(), card.width(), 4, 2, 2)
+
+
+class TimerWidget(BaseWidget):
+    MIN_SIZE = QSize(280, 160)
+    DEFAULT_SIZE = QSize(380, 240)
+
+    def __init__(self, manager: "WidgetManager", key: str) -> None:
+        super().__init__(manager, key)
+        self.content.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self.remaining = int(self.config.get("work_minutes", 25)) * 60
+        self.mode = "work"  # work, break, long_break
+        self.cycle = 0
+        self.running = False
+
+        root = QVBoxLayout(self.content)
+        root.setContentsMargins(16, 13, 16, 11)
+        root.setSpacing(8)
+
+        header = QHBoxLayout()
+        self.icon_label = QLabel()
+        self.icon_label.setFixedSize(16, 16)
+        self.title_label = QLabel("FOCUS TIMER")
+        self.title_label.setObjectName("timerTitle")
+        self.cycle_label = QLabel()
+        self.cycle_label.setObjectName("mutedSmall")
+        header.addWidget(self.icon_label)
+        header.addWidget(self.title_label)
+        header.addStretch()
+        header.addWidget(self.cycle_label)
+        root.addLayout(header)
+
+        self.time_label = QLabel("25:00")
+        self.time_label.setObjectName("timerTime")
+        self.time_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        root.addWidget(self.time_label)
+
+        self.mode_label = QLabel("Work · Focus time")
+        self.mode_label.setObjectName("timerMode")
+        self.mode_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        root.addWidget(self.mode_label)
+
+        self.progress = QProgressBar()
+        self.progress.setRange(0, 1000)
+        self.progress.setTextVisible(False)
+        self.progress.setFixedHeight(6)
+        root.addWidget(self.progress)
+
+        controls = QHBoxLayout()
+        self.start_button = QPushButton("")
+        self.start_button.setFixedSize(32, 32)
+        self.start_button.clicked.connect(self.toggle)
+        self.reset_button = QPushButton("")
+        self.reset_button.setFixedSize(32, 32)
+        self.reset_button.clicked.connect(self.reset_timer)
+        self.skip_button = QPushButton("")
+        self.skip_button.setFixedSize(32, 32)
+        self.skip_button.clicked.connect(self.skip)
+        controls.addStretch()
+        controls.addWidget(self.reset_button)
+        controls.addWidget(self.start_button)
+        controls.addWidget(self.skip_button)
+        controls.addStretch()
+        root.addLayout(controls)
+
+        self.dots_label = QLabel()
+        self.dots_label.setObjectName("mutedSmall")
+        self.dots_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        root.addWidget(self.dots_label)
+
+        self.timer = QTimer(self)
+        self.timer.setTimerType(Qt.TimerType.CoarseTimer)
+        self.timer.timeout.connect(self.tick)
+
+        self.apply_timer_style()
+        self.apply_icons()
+        self.reload_config()
+
+    def settings_page(self) -> str:
+        return "Timer"
+
+    def apply_icons(self) -> None:
+        super().apply_icons()
+        if hasattr(self, "icon_label"):
+            icon = awesome_icon("fa6s.stopwatch", self.accent.name())
+            self.icon_label.setPixmap(icon.pixmap(14, 14))
+            set_icon_button(self.reset_button, "fa6s.arrows-rotate", "↻", 12)
+            set_icon_button(self.skip_button, "fa6s.forward-step", "⏭", 12)
+            self.update_play_icon()
+
+    def update_play_icon(self) -> None:
+        if hasattr(self, "start_button"):
+            set_icon_button(self.start_button, "fa6s.pause" if self.running else "fa6s.play", "⏸" if self.running else "▶", 12)
+
+    def apply_timer_style(self) -> None:
+        c = widget_palette_colors()
+        fs = float(STORE.data.get("appearance", {}).get("font_scale", 1.0))
+        self.content.setStyleSheet(f"""
+            QLabel {{ background: transparent; color: {c['text'].name()}; }}
+            QLabel#timerTitle {{ color: {self.accent.name()}; font-size: {int(11*fs)}px; font-weight: 700; letter-spacing: 1px; }}
+            QLabel#timerTime {{ font-family: "Segoe UI Variable Display", "Segoe UI"; font-size: {int(42*fs)}px; font-weight: 700; }}
+            QLabel#timerMode {{ color: {c['muted'].name()}; font-size: {int(11*fs)}px; font-weight: 600; }}
+            QLabel#mutedSmall {{ color: {c['muted'].name()}; font-size: {int(10*fs)}px; }}
+            QProgressBar {{ background: {c['control'].name(QColor.NameFormat.HexArgb)}; border: none; border-radius: 3px; }}
+            QProgressBar::chunk {{ background: {self.accent.name()}; border-radius: 3px; }}
+        """)
+
+    def reload_config(self) -> None:
+        self.reset_timer()
+        self.apply_timer_style()
+        self.apply_icons()
+
+    def total_for_mode(self, mode: str) -> int:
+        if mode == "work":
+            return max(1, int(self.config.get("work_minutes", 25))) * 60
+        elif mode == "break":
+            return max(1, int(self.config.get("break_minutes", 5))) * 60
+        else:
+            return max(1, int(self.config.get("long_break_minutes", 15))) * 60
+
+    def reset_timer(self) -> None:
+        self.running = False
+        self.timer.stop()
+        self.mode = "work"
+        self.remaining = self.total_for_mode(self.mode)
+        self.update_display()
+        self.update_play_icon()
+
+    def toggle(self) -> None:
+        self.running = not self.running
+        if self.running:
+            self.timer.start(1000)
+        else:
+            self.timer.stop()
+        self.update_play_icon()
+
+    def skip(self) -> None:
+        self.advance_mode()
+
+    def tick(self) -> None:
+        if not self.running:
+            return
+        self.remaining -= 1
+        if self.remaining <= 0:
+            self.advance_mode()
+            if bool(self.config.get("sound_enabled", True)):
+                QApplication.beep()
+        self.update_display()
+
+    def advance_mode(self) -> None:
+        if self.mode == "work":
+            self.cycle += 1
+            cycles = max(1, int(self.config.get("cycles", 4)))
+            if self.cycle % cycles == 0:
+                self.mode = "long_break"
+            else:
+                self.mode = "break"
+            if not bool(self.config.get("auto_start_break", False)):
+                self.running = False
+                self.timer.stop()
+        else:
+            self.mode = "work"
+            if not bool(self.config.get("auto_start_work", False)):
+                self.running = False
+                self.timer.stop()
+        self.remaining = self.total_for_mode(self.mode)
+        self.update_display()
+        self.update_play_icon()
+
+    def update_display(self) -> None:
+        mins, secs = divmod(max(0, self.remaining), 60)
+        self.time_label.setText(f"{mins:02d}:{secs:02d}")
+        mode_text = {"work": "Work · Focus time", "break": "Break · Rest", "long_break": "Long break · Recharge"}[self.mode]
+        self.mode_label.setText(mode_text)
+        total = self.total_for_mode(self.mode)
+        pct = 1000 - int((self.remaining / total) * 1000) if total else 0
+        self.progress.setValue(max(0, min(1000, pct)))
+        cycles = max(1, int(self.config.get("cycles", 4)))
+        dots = []
+        for i in range(cycles):
+            if i < self.cycle % cycles:
+                dots.append("●")
+            elif i == self.cycle % cycles and self.mode == "work":
+                dots.append("◐")
+            else:
+                dots.append("○")
+        self.dots_label.setText("  ".join(dots) + f"  ·  Cycle {self.cycle + 1}")
+        self.cycle_label.setText(f"{self.cycle + 1}/{cycles}")
 
 
 class NewsImage(QWidget):
@@ -4169,18 +4735,20 @@ DOCUMENT_EXTENSIONS = {".docx", ".pdf", ".pptx", ".rtf", ".odt", ".epub"}
 DATA_EXTENSIONS = {".csv", ".json", ".xlsx", ".xml", ".yaml", ".yml", ".toml", ".ini", ".ods"}
 AUDIO_EXTENSIONS = {".mp3", ".wav", ".flac", ".ogg", ".m4a", ".aac", ".wma", ".opus", ".aiff", ".aif", ".ac3", ".amr", ".ape", ".alac", ".caf", ".mka"}
 VIDEO_EXTENSIONS = {".mp4", ".mkv", ".avi", ".mov", ".webm", ".wmv", ".m4v", ".flv", ".mpeg", ".mpg", ".m2v", ".3gp", ".3g2", ".ts", ".mts", ".m2ts", ".vob", ".ogv"}
-CONVERTER_SOURCE_EXTENSIONS = sorted(IMAGE_EXTENSIONS | TEXT_EXTENSIONS | DOCUMENT_EXTENSIONS | DATA_EXTENSIONS | AUDIO_EXTENSIONS | VIDEO_EXTENSIONS)
+CODE_EXTENSIONS = {".py", ".pyw", ".js", ".jsx", ".ts", ".tsx", ".java", ".c", ".cpp", ".cc", ".h", ".hpp", ".cs", ".go", ".rs", ".php", ".rb", ".kt", ".kts", ".swift", ".dart", ".lua", ".sh", ".bash", ".ps1", ".bat", ".cmd", ".sql", ".css", ".scss", ".sass", ".less", ".vue", ".svelte", ".r", ".pl", ".pm", ".scala", ".gradle", ".ino", ".m", ".mm", ".jsonc", ".ipynb"}
+CONVERTER_SOURCE_EXTENSIONS = sorted(IMAGE_EXTENSIONS | TEXT_EXTENSIONS | DOCUMENT_EXTENSIONS | DATA_EXTENSIONS | AUDIO_EXTENSIONS | VIDEO_EXTENSIONS | CODE_EXTENSIONS)
 FORMAT_LABELS = {
     "png":"PNG image", "jpg":"JPEG image", "webp":"WebP image", "bmp":"BMP image", "tiff":"TIFF image", "gif":"GIF image", "ico":"Windows icon", "avif":"AVIF image", "heic":"HEIC image", "jp2":"JPEG 2000 image", "tga":"TGA image", "pcx":"PCX image", "ppm":"PPM image", "pgm":"PGM image", "pbm":"PBM image", "dds":"DDS texture", "pdf":"PDF document",
     "txt":"Plain text", "md":"Markdown", "html":"HTML document", "docx":"Word document", "rtf":"Rich Text Format", "odt":"OpenDocument text", "epub":"EPUB book", "csv":"CSV table", "json":"JSON data", "xlsx":"Excel workbook", "xml":"XML data", "yaml":"YAML data", "toml":"TOML data", "ods":"OpenDocument sheet",
     "mp3":"MP3 audio", "wav":"WAV audio", "flac":"FLAC audio", "ogg":"Ogg audio", "m4a":"M4A audio", "opus":"Opus audio", "aiff":"AIFF audio", "ac3":"Dolby AC-3 audio", "wma":"Windows Media audio",
     "mp4":"MP4 video", "mkv":"Matroska video", "avi":"AVI video", "mov":"QuickTime video", "webm":"WebM video", "mpg":"MPEG video", "flv":"Flash video", "ogv":"Ogg video", "3gp":"3GP video", "ts":"MPEG transport stream",
+    "py":"Python script", "js":"JavaScript file", "ts":"TypeScript file", "java":"Java source", "c":"C source", "cpp":"C++ source", "cs":"C# source", "go":"Go source", "rs":"Rust source", "php":"PHP script", "rb":"Ruby script", "swift":"Swift source", "css":"Stylesheet", "ipynb":"Jupyter notebook", "sql":"SQL script", "sh":"Shell script", "ps1":"PowerShell script",
 }
 
 
 def normalized_extension(value: str) -> str:
     ext = value.lower().lstrip(".")
-    return {"jpeg":"jpg", "tif":"tiff", "htm":"html", "heif":"heic", "j2k":"jp2", "jpf":"jp2", "jpx":"jp2", "aif":"aiff", "m4v":"mp4", "mpeg":"mpg", "m2v":"mpg", "3g2":"3gp", "mts":"ts", "m2ts":"ts", "yml":"yaml"}.get(ext, ext)
+    return {"jpeg":"jpg", "tif":"tiff", "htm":"html", "heif":"heic", "j2k":"jp2", "jpf":"jp2", "jpx":"jp2", "aif":"aiff", "m4v":"mp4", "mpeg":"mpg", "m2v":"mpg", "3g2":"3gp", "mts":"ts", "m2ts":"ts", "yml":"yaml", "jsonc":"json", "pyw":"py", "jsx":"js", "tsx":"ts", "cc":"cpp", "hpp":"h", "kts":"kt", "bash":"sh", "cmd":"bat"}.get(ext, ext)
 
 
 def converter_targets_for(path_or_extension: str | Path) -> list[str]:
@@ -4199,6 +4767,24 @@ def converter_targets_for(path_or_extension: str | Path) -> list[str]:
         targets = ["pdf", "docx", "odt", "rtf", "txt"]
     elif suffix in DATA_EXTENSIONS:
         targets = ["csv", "json", "xlsx", "xml", "yaml", "toml", "ods", "pdf"]
+    elif suffix in CODE_EXTENSIONS:
+        if suffix == ".ipynb":
+            targets = ["py", "txt", "md", "html", "pdf", "docx", "json"]
+        elif suffix in (".py", ".pyw"):
+            targets = ["ipynb", "txt", "md", "html", "pdf", "docx", "js", "py"]
+        elif suffix in (".js", ".jsx", ".ts", ".tsx"):
+            targets = ["txt", "md", "html", "pdf", "docx", "js", "json", "py"]
+        elif suffix in (".json", ".jsonc"):
+            targets = ["txt", "md", "html", "pdf", "docx", "json", "yaml", "xml", "js"]
+        else:
+            targets = ["txt", "md", "html", "pdf", "docx", "rtf", "odt", "epub", "py", "js", "ipynb", "json"]
+        # Allow same-extension formatting for code files (minify/beautify)
+        if source in targets:
+            return targets
+        # For code files, keep same extension as valid target for formatting
+        if suffix in (".js", ".jsx", ".ts", ".tsx", ".css", ".scss", ".json", ".jsonc", ".py", ".pyw"):
+            targets = targets + [source] if source not in targets else targets
+            return targets
     elif suffix in AUDIO_EXTENSIONS:
         targets = ["mp3", "wav", "flac", "ogg", "m4a", "opus", "aiff", "ac3", "wma"]
     elif suffix in VIDEO_EXTENSIONS:
@@ -4497,6 +5083,119 @@ def _convert_table(source: Path, temporary: Path, target: str) -> None:
     else:raise ValueError(f"Unsupported table output: {target}")
 
 
+def _convert_code(source: Path, temporary: Path, target: str) -> None:
+    suffix = source.suffix.lower()
+    target = normalized_extension(target)
+    text = source.read_text(encoding="utf-8", errors="replace")
+    # IPYNB -> PY
+    if suffix == ".ipynb" and target == "py":
+        try:
+            data = json.loads(text)
+            lines: list[str] = []
+            for cell in data.get("cells", []):
+                if cell.get("cell_type") == "code":
+                    src = cell.get("source", [])
+                    if isinstance(src, list):
+                        lines.extend(src)
+                    else:
+                        lines.append(str(src))
+                    lines.append("\n\n")
+            temporary.write_text("".join(lines) if lines else "# Empty notebook\n", encoding="utf-8")
+            return
+        except Exception:
+            pass
+    # PY/JS/TS -> IPYNB
+    if suffix in (".py", ".pyw", ".js", ".jsx", ".ts", ".tsx", ".java", ".c", ".cpp", ".go", ".rs", ".php", ".rb", ".cs") and target == "ipynb":
+        notebook = {
+            "cells": [{"cell_type": "code", "execution_count": None, "metadata": {}, "outputs": [], "source": text.splitlines(True)}],
+            "metadata": {"kernelspec": {"display_name": "Python 3", "language": "python", "name": "python3"}, "language_info": {"name": "python", "version": "3.10.0"}},
+            "nbformat": 4, "nbformat_minor": 5
+        }
+        temporary.write_text(json.dumps(notebook, indent=2, ensure_ascii=False), encoding="utf-8")
+        return
+    # JSON pretty/minify
+    if suffix in (".json", ".jsonc", ".ipynb") and target == "json":
+        try:
+            data = json.loads(text)
+            quality = converter_quality_preset()
+            if quality == "fast":
+                temporary.write_text(json.dumps(data, separators=(',', ':'), ensure_ascii=False), encoding="utf-8")
+            elif quality == "balanced":
+                temporary.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+            else:
+                temporary.write_text(json.dumps(data, indent=4, sort_keys=True, ensure_ascii=False), encoding="utf-8")
+            return
+        except Exception:
+            pass
+    # Document outputs with code wrapping
+    if target == "md":
+        lang = suffix.lstrip(".")
+        md_content = f"```{lang}\n{text}\n```\n"
+        temporary.write_text(md_content, encoding="utf-8")
+        return
+    elif target == "html":
+        escaped = html.escape(text)
+        html_content = f"<!doctype html><html><head><meta charset='utf-8'><title>{html.escape(source.stem)}</title><style>body{{font-family:Segoe UI,sans-serif;margin:24px}}pre{{background:#f5f5f5;padding:16px;overflow:auto;border-radius:8px;font-family:Consolas,monospace;white-space:pre-wrap}}h1{{font-size:20px}}</style></head><body><h1>{html.escape(source.stem)}</h1><pre><code>{escaped}</code></pre></body></html>"
+        temporary.write_text(html_content, encoding="utf-8")
+        return
+    elif target in ("txt", "pdf", "docx", "rtf", "odt", "epub"):
+        title = source.stem
+        if target == "txt":
+            temporary.write_text(text, encoding="utf-8")
+        elif target == "pdf":
+            _write_pdf_text(text, temporary, title)
+        elif target == "docx":
+            _write_docx_text(text, temporary, title)
+        elif target == "rtf":
+            _write_rtf_text(text, temporary)
+        elif target == "odt":
+            _write_odt_text(text, temporary, title)
+        elif target == "epub":
+            _write_epub_text(text, temporary, title)
+        return
+    # Same-extension formatting (minify/beautify)
+    if normalized_extension(suffix) == target:
+        quality = converter_quality_preset()
+        if suffix in (".js", ".jsx", ".ts", ".tsx"):
+            if quality == "fast":
+                no_block = re.sub(r'/\*.*?\*/', '', text, flags=re.DOTALL)
+                no_line = re.sub(r'//.*?$', '', no_block, flags=re.MULTILINE)
+                minified = re.sub(r'\s+', ' ', no_line).strip()
+                temporary.write_text(minified, encoding="utf-8")
+            else:
+                cleaned = "\n".join(line.rstrip() for line in text.splitlines())
+                temporary.write_text(cleaned + "\n", encoding="utf-8")
+            return
+        elif suffix in (".css", ".scss", ".sass", ".less"):
+            if quality == "fast":
+                no_comments = re.sub(r'/\*.*?\*/', '', text, flags=re.DOTALL)
+                minified = re.sub(r'\s+', ' ', no_comments)
+                minified = re.sub(r'\s*([{}:;,])\s*', r'\1', minified).strip()
+                temporary.write_text(minified, encoding="utf-8")
+            else:
+                cleaned = "\n".join(line.rstrip() for line in text.splitlines())
+                temporary.write_text(cleaned + "\n", encoding="utf-8")
+            return
+        elif suffix in (".json", ".jsonc"):
+            try:
+                data = json.loads(text)
+                if quality == "fast":
+                    temporary.write_text(json.dumps(data, separators=(',', ':'), ensure_ascii=False), encoding="utf-8")
+                else:
+                    temporary.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+                return
+            except Exception:
+                pass
+        cleaned = "\n".join(line.rstrip() for line in text.splitlines())
+        temporary.write_text(cleaned + "\n", encoding="utf-8")
+        return
+    # Generic code copy
+    if target in ("py", "js", "ts", "java", "c", "cpp", "go", "rs", "php", "rb", "swift", "css", "html", "xml", "yaml", "toml", "ini", "sh", "ps1", "bat", "sql", "json"):
+        temporary.write_text(text, encoding="utf-8")
+        return
+    raise ValueError(f"Unsupported code output: {target}")
+
+
 def _convert_media(source: Path, temporary: Path, target: str) -> None:
     import imageio_ffmpeg
     ffmpeg=imageio_ffmpeg.get_ffmpeg_exe();target=normalized_extension(target)
@@ -4519,6 +5218,7 @@ def convert_file(source_value: str | Path, target: str) -> Path:
     try:
         suffix=source.suffix.lower()
         if suffix in IMAGE_EXTENSIONS:_convert_image(source,temporary,target)
+        elif suffix in CODE_EXTENSIONS:_convert_code(source,temporary,target)
         elif suffix in DATA_EXTENSIONS:_convert_table(source,temporary,target)
         elif suffix in TEXT_EXTENSIONS or suffix in DOCUMENT_EXTENSIONS:_convert_text_document(source,temporary,target)
         elif suffix in AUDIO_EXTENSIONS or suffix in VIDEO_EXTENSIONS:_convert_media(source,temporary,target)
@@ -4624,7 +5324,7 @@ def run_file_conversion_ui(source_value:str,target:str)->int:
 
 
 class SettingsPanel(QDialog):
-    PAGES = ["Widgets", "Clocks", "CPU", "Music", "Goal", "Calendar", "Quotes", "News", "File Converter", "Appearance", "General", "Diagnostics"]
+    PAGES = ["Widgets", "Clocks", "CPU", "Music", "Goal", "Calendar", "Quotes", "News", "Weather", "Notes", "Timer", "File Converter", "Appearance", "General", "Diagnostics"]
 
     def __init__(self, manager: "WidgetManager", page: str = "Widgets") -> None:
         super().__init__(None)
@@ -4671,7 +5371,7 @@ class SettingsPanel(QDialog):
         self.nav = QListWidget(); self.nav.setIconSize(QSize(18,18)); self.nav.setSpacing(1)
         nav_icons = (
             "fa6s.table-cells-large", "fa6s.clock", "fa6s.gauge-high", "fa6s.music",
-            "fa6s.flag-checkered", "fa6s.calendar-days", "fa6s.quote-left", "fa6s.newspaper", "fa6s.file-export", "fa6s.palette", "fa6s.gear", "fa6s.stethoscope",
+            "fa6s.flag-checkered", "fa6s.calendar-days", "fa6s.quote-left", "fa6s.newspaper", "fa6s.cloud-sun", "fa6s.note-sticky", "fa6s.stopwatch", "fa6s.file-export", "fa6s.palette", "fa6s.gear", "fa6s.stethoscope",
         )
         for label, icon_name in zip(self.PAGES, nav_icons):
             item = QListWidgetItem(awesome_icon(icon_name), label); item.setToolTip(f"Open {label} settings"); self.nav.addItem(item)
@@ -4690,6 +5390,9 @@ class SettingsPanel(QDialog):
         self.stack.addWidget(self.build_calendar_page())
         self.stack.addWidget(self.build_quotes_page())
         self.stack.addWidget(self.build_news_page())
+        self.stack.addWidget(self.build_weather_page())
+        self.stack.addWidget(self.build_notes_page())
+        self.stack.addWidget(self.build_timer_page())
         self.stack.addWidget(self.build_converter_page())
         self.stack.addWidget(self.build_appearance_page())
         self.stack.addWidget(self.build_general_page())
@@ -4724,7 +5427,8 @@ class SettingsPanel(QDialog):
         icon_map = {
             "your widgets":"fa6s.table-cells-large", "clock widgets":"fa6s.clock", "system monitor":"fa6s.gauge-high",
             "music player":"fa6s.music", "goal countdown":"fa6s.flag-checkered", "calendar and to-do":"fa6s.calendar-days",
-            "motivational quotes":"fa6s.quote-left", "news":"fa6s.newspaper", "file converter":"fa6s.file-export", "appearance":"fa6s.palette",
+            "motivational quotes":"fa6s.quote-left", "news":"fa6s.newspaper", "weather":"fa6s.cloud-sun", "quick notes":"fa6s.note-sticky", "focus timer":"fa6s.stopwatch",
+            "file converter":"fa6s.file-export", "appearance":"fa6s.palette",
             "general":"fa6s.gear", "windows diagnostics":"fa6s.stethoscope",
         }
         header = QHBoxLayout(); header.setSpacing(12)
@@ -4753,6 +5457,9 @@ class SettingsPanel(QDialog):
             "calendar": ("Calendar + To-do", "Month view with dated tasks and completion status"),
             "quotes": ("Motivational Quotes", "Ultra-mini, offline, low-frequency quote rotation"),
             "news": ("News", "Image headline slider with offline cache"),
+            "weather": ("Weather", "Live temperature, condition and city forecast"),
+            "notes": ("Quick Notes", "Sticky notes with auto-save and word count"),
+            "timer": ("Focus Timer", "Pomodoro work/break cycles with progress"),
         }
         for column, title in ((1, "Size"), (2, "Surface"), (3, "State")):
             header = QLabel(title.upper()); header.setObjectName("muted"); header.setStyleSheet("font-size: 9px; font-weight: 700;")
@@ -5049,6 +5756,67 @@ class SettingsPanel(QDialog):
         if chosen.isValid():
             target.setText(chosen.name()); self.style_color_button(button, chosen.name())
 
+    def build_weather_page(self) -> QWidget:
+        page, layout = self.page_shell("Weather", "Live weather for your city with offline caching. Uses wttr.in without API keys.")
+        cfg = self.draft["widgets"]["weather"]
+        card = QFrame(); card.setObjectName("settingsCard")
+        form = QGridLayout(card); form.setContentsMargins(18,16,18,16); form.setVerticalSpacing(12)
+        city = QLineEdit(str(cfg.get("city","Delhi"))); city.setPlaceholderText("City name, e.g. Delhi, London, Tokyo")
+        units = QComboBox(); units.addItem("Celsius (°C)", "metric"); units.addItem("Fahrenheit (°F)", "imperial")
+        units.setCurrentIndex(0 if cfg.get("units","metric")=="metric" else 1)
+        refresh = QComboBox()
+        for m in (10, 15, 30, 60, 120): refresh.addItem(f"Every {m} minutes", m)
+        refresh.setCurrentIndex(max(0, refresh.findData(int(cfg.get("refresh_minutes",30)))))
+        form.addWidget(QLabel("City"),0,0); form.addWidget(city,0,1)
+        form.addWidget(QLabel("Units"),1,0); form.addWidget(units,1,1)
+        form.addWidget(QLabel("Refresh"),2,0); form.addWidget(refresh,2,1)
+        form.setColumnStretch(1,1)
+        self.controls["weather:city"]=city; self.controls["weather:units"]=units; self.controls["weather:refresh"]=refresh
+        layout.addWidget(card)
+        note=QLabel("Weather data is fetched from wttr.in. When offline, the widget shows 'You're not connected' and keeps the last successful reading."); note.setObjectName("muted"); note.setWordWrap(True); layout.addWidget(note); layout.addStretch()
+        return page
+
+    def build_notes_page(self) -> QWidget:
+        page, layout = self.page_shell("Quick Notes", "A lightweight sticky-note widget with auto-save, word count and custom title.")
+        cfg = self.draft["widgets"]["notes"]
+        card = QFrame(); card.setObjectName("settingsCard")
+        form = QGridLayout(card); form.setContentsMargins(18,16,18,16); form.setVerticalSpacing(12)
+        title = QLineEdit(str(cfg.get("title","Quick Notes"))); title.setMaxLength(60)
+        font_size = QSpinBox(); font_size.setRange(9,20); font_size.setValue(int(cfg.get("font_size",12)))
+        content_edit = QPlainTextEdit(); content_edit.setPlainText(str(cfg.get("content",""))); content_edit.setMinimumHeight(200); content_edit.setPlaceholderText("Your notes…")
+        form.addWidget(QLabel("Title"),0,0); form.addWidget(title,0,1)
+        form.addWidget(QLabel("Font size"),1,0); form.addWidget(font_size,1,1)
+        form.addWidget(QLabel("Content"),2,0); form.addWidget(content_edit,2,1)
+        form.setColumnStretch(1,1)
+        self.controls["notes:title"]=title; self.controls["notes:font_size"]=font_size; self.controls["notes:content"]=content_edit
+        layout.addWidget(card)
+        note=QLabel("Notes are saved locally in settings.json. The widget auto-saves 0.8s after typing and shows live character/word count."); note.setObjectName("muted"); note.setWordWrap(True); layout.addWidget(note); layout.addStretch()
+        return page
+
+    def build_timer_page(self) -> QWidget:
+        page, layout = self.page_shell("Focus Timer", "Pomodoro timer with work/break cycles, progress bar and optional sound.")
+        cfg = self.draft["widgets"]["timer"]
+        card = QFrame(); card.setObjectName("settingsCard")
+        form = QGridLayout(card); form.setContentsMargins(18,16,18,16); form.setVerticalSpacing(12)
+        work = QSpinBox(); work.setRange(1,120); work.setSuffix(" min"); work.setValue(int(cfg.get("work_minutes",25)))
+        brk = QSpinBox(); brk.setRange(1,60); brk.setSuffix(" min"); brk.setValue(int(cfg.get("break_minutes",5)))
+        long_brk = QSpinBox(); long_brk.setRange(1,60); long_brk.setSuffix(" min"); long_brk.setValue(int(cfg.get("long_break_minutes",15)))
+        cycles = QSpinBox(); cycles.setRange(1,12); cycles.setValue(int(cfg.get("cycles",4)))
+        auto_break = QCheckBox("Auto-start break"); auto_break.setChecked(bool(cfg.get("auto_start_break",False)))
+        auto_work = QCheckBox("Auto-start work"); auto_work.setChecked(bool(cfg.get("auto_start_work",False)))
+        sound = QCheckBox("Play sound on completion"); sound.setChecked(bool(cfg.get("sound_enabled",True)))
+        form.addWidget(QLabel("Work duration"),0,0); form.addWidget(work,0,1)
+        form.addWidget(QLabel("Break duration"),1,0); form.addWidget(brk,1,1)
+        form.addWidget(QLabel("Long break"),2,0); form.addWidget(long_brk,2,1)
+        form.addWidget(QLabel("Cycles before long break"),3,0); form.addWidget(cycles,3,1)
+        form.addWidget(auto_break,4,0,1,2); form.addWidget(auto_work,5,0,1,2); form.addWidget(sound,6,0,1,2)
+        form.setColumnStretch(1,1)
+        self.controls["timer:work"]=work; self.controls["timer:break"]=brk; self.controls["timer:long_break"]=long_brk; self.controls["timer:cycles"]=cycles
+        self.controls["timer:auto_break"]=auto_break; self.controls["timer:auto_work"]=auto_work; self.controls["timer:sound"]=sound
+        layout.addWidget(card)
+        note=QLabel("Timer uses a single 1-second coarse timer only while running. Progress and cycle dots update live. Sound uses system beep."); note.setObjectName("muted"); note.setWordWrap(True); layout.addWidget(note); layout.addStretch()
+        return page
+
     def build_converter_page(self) -> QWidget:
         page, layout = self.page_shell("File Converter", "Add format-aware conversion commands to the Windows file context menu. Converted files are saved beside the original.")
         scroll=QScrollArea();scroll.setWidgetResizable(True);scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff);scroll.setStyleSheet("QScrollArea, QScrollArea > QWidget > QWidget { background:transparent; border:none; }");host=QWidget();host.setStyleSheet("background:transparent;");body=QVBoxLayout(host);body.setContentsMargins(1,2,8,4);body.setSpacing(11)
@@ -5060,7 +5828,7 @@ class SettingsPanel(QDialog):
         note=QLabel("Right-click a supported file, open OS Widgets, then choose an output format. Windows 11 may place classic extension menus under Show more options.");note.setObjectName("muted");note.setWordWrap(True);root.addWidget(note);body.addWidget(card)
 
         formats=QGroupBox("Included converters");grid=QGridLayout(formats);grid.setHorizontalSpacing(10);grid.setVerticalSpacing(10)
-        groups=[("fa6s.image","Images","PNG, JPEG, AVIF, HEIC, WebP, JPEG 2000, TIFF, TGA, DDS and more"),("fa6s.file-lines","Documents","TXT, Markdown, HTML, Word, PDF, RTF, ODT, EPUB, PowerPoint text"),("fa6s.table","Data","CSV, JSON, Excel, XML, YAML, TOML, ODS, PDF"),("fa6s.music","Audio","MP3, WAV, FLAC, OGG, M4A, Opus, AIFF, AC-3, WMA"),("fa6s.film","Video","MP4, MKV, AVI, MOV, WebM, MPEG, FLV, OGV, 3GP, TS")]
+        groups=[("fa6s.image","Images","PNG, JPEG, AVIF, HEIC, WebP, JPEG 2000, TIFF, TGA, DDS and more"),("fa6s.file-lines","Documents","TXT, Markdown, HTML, Word, PDF, RTF, ODT, EPUB, PowerPoint text"),("fa6s.table","Data","CSV, JSON, Excel, XML, YAML, TOML, ODS, PDF"),("fa6s.code","Code","Python, JavaScript, TypeScript, Java, C/C++, Go, Rust, JSON, Jupyter and 30+ more"),("fa6s.music","Audio","MP3, WAV, FLAC, OGG, M4A, Opus, AIFF, AC-3, WMA"),("fa6s.film","Video","MP4, MKV, AVI, MOV, WebM, MPEG, FLV, OGV, 3GP, TS")]
         for index,(icon_name,title,detail) in enumerate(groups):
             box=QFrame();box.setObjectName("settingsCard");box.setMinimumHeight(62);row=QHBoxLayout(box);row.setContentsMargins(12,10,12,10);icon=QLabel();icon.setPixmap(awesome_icon(icon_name,app_accent_color().name()).pixmap(18,18));text=QVBoxLayout();text.setSpacing(1);name=QLabel(title);name.setStyleSheet("font-weight:650;");desc=QLabel(detail);desc.setObjectName("muted");desc.setWordWrap(True);text.addWidget(name);text.addWidget(desc);row.addWidget(icon);row.addLayout(text,1);grid.addWidget(box,index//2,index%2)
         body.addWidget(formats)
@@ -5081,10 +5849,20 @@ class SettingsPanel(QDialog):
             if theme.itemData(i) == cfg.get("theme", "system"): theme.setCurrentIndex(i)
         transparency = QCheckBox("Enable translucent glass surfaces"); transparency.setChecked(bool(cfg.get("transparency", True)))
         animations = QCheckBox("Enable subtle animations"); animations.setChecked(bool(cfg.get("animations", True)))
+        compact = QCheckBox("Compact mode — tighter padding for small displays"); compact.setChecked(bool(cfg.get("compact_mode", False)))
+        border = QCheckBox("Show widget borders"); border.setChecked(bool(cfg.get("widget_border", True)))
+        reduce_motion = QCheckBox("Reduce motion on battery saver"); reduce_motion.setChecked(bool(cfg.get("reduce_motion_on_battery", False)))
+        font_scale = QComboBox(); font_scale.addItem("Small (90%)", 0.9); font_scale.addItem("Default (100%)", 1.0); font_scale.addItem("Large (115%)", 1.15); font_scale.addItem("Extra large (130%)", 1.3)
+        current_scale = float(cfg.get("font_scale", 1.0))
+        for i in range(font_scale.count()):
+            if abs(float(font_scale.itemData(i)) - current_scale) < 0.01: font_scale.setCurrentIndex(i)
         form.addWidget(QLabel("Theme"), 0, 0); form.addWidget(theme, 0, 1)
-        form.addWidget(transparency, 1, 0, 1, 2); form.addWidget(animations, 2, 0, 1, 2)
+        form.addWidget(QLabel("Font scale"), 1, 0); form.addWidget(font_scale, 1, 1)
+        form.addWidget(transparency, 2, 0, 1, 2); form.addWidget(animations, 3, 0, 1, 2)
+        form.addWidget(compact, 4, 0, 1, 2); form.addWidget(border, 5, 0, 1, 2); form.addWidget(reduce_motion, 6, 0, 1, 2)
         form.setColumnStretch(1, 1)
         self.controls["appearance:theme"] = theme; self.controls["appearance:transparency"] = transparency; self.controls["appearance:animations"] = animations
+        self.controls["appearance:compact_mode"] = compact; self.controls["appearance:widget_border"] = border; self.controls["appearance:reduce_motion"] = reduce_motion; self.controls["appearance:font_scale"] = font_scale
         layout.addWidget(card)
 
         colors_group = QGroupBox("Custom colour theme and widget shape")
@@ -5316,10 +6094,30 @@ class SettingsPanel(QDialog):
         news["slide_seconds"] = int(self.controls["news:slide"].currentData())
         news["fetch_article_images"] = self.controls["news:article_images"].isChecked()
         news["reader_fallback"] = self.controls["news:reader_fallback"].isChecked()
+        weather = self.draft["widgets"]["weather"]
+        weather["city"] = self.controls["weather:city"].text().strip() or "Delhi"
+        weather["units"] = self.controls["weather:units"].currentData()
+        weather["refresh_minutes"] = int(self.controls["weather:refresh"].currentData())
+        notes = self.draft["widgets"]["notes"]
+        notes["title"] = self.controls["notes:title"].text().strip() or "Quick Notes"
+        notes["font_size"] = int(self.controls["notes:font_size"].value())
+        notes["content"] = self.controls["notes:content"].toPlainText()[:10000]
+        timer = self.draft["widgets"]["timer"]
+        timer["work_minutes"] = int(self.controls["timer:work"].value())
+        timer["break_minutes"] = int(self.controls["timer:break"].value())
+        timer["long_break_minutes"] = int(self.controls["timer:long_break"].value())
+        timer["cycles"] = int(self.controls["timer:cycles"].value())
+        timer["auto_start_break"] = self.controls["timer:auto_break"].isChecked()
+        timer["auto_start_work"] = self.controls["timer:auto_work"].isChecked()
+        timer["sound_enabled"] = self.controls["timer:sound"].isChecked()
         appearance = self.draft["appearance"]
         appearance["theme"] = self.controls["appearance:theme"].currentData()
         appearance["transparency"] = self.controls["appearance:transparency"].isChecked()
         appearance["animations"] = self.controls["appearance:animations"].isChecked()
+        appearance["compact_mode"] = self.controls["appearance:compact_mode"].isChecked()
+        appearance["widget_border"] = self.controls["appearance:widget_border"].isChecked()
+        appearance["reduce_motion_on_battery"] = self.controls["appearance:reduce_motion"].isChecked()
+        appearance["font_scale"] = float(self.controls["appearance:font_scale"].currentData())
         appearance["app_accent"] = safe_color(self.controls["appearance:app_accent"].text(), "#3178C6").name()
         appearance["custom_widget_colors"] = self.controls["appearance:custom_widget_colors"].isChecked()
         appearance["widget_accent"] = safe_color(self.controls["appearance:widget_accent"].text(), "#58A6FF").name()
@@ -5446,7 +6244,7 @@ class WidgetManager(QObject):
         title.setEnabled(False)
         menu.addAction(awesome_icon("fa6s.gear"), "Open settings", lambda: self.open_settings("Widgets"))
         menu.addSeparator()
-        for key, label in (("clock1", "Clock 1"), ("clock2", "Clock 2"), ("clock3", "Clock 3"), ("clock4", "Clock 4"), ("cpu", "System Monitor"), ("music", "Music Player"), ("goal", "Goal Countdown"), ("calendar", "Calendar + To-do"), ("quotes", "Motivational Quotes"), ("news", "News")):
+        for key, label in (("clock1", "Clock 1"), ("clock2", "Clock 2"), ("clock3", "Clock 3"), ("clock4", "Clock 4"), ("cpu", "System Monitor"), ("music", "Music Player"), ("goal", "Goal Countdown"), ("calendar", "Calendar + To-do"), ("quotes", "Motivational Quotes"), ("news", "News"), ("weather", "Weather"), ("notes", "Quick Notes"), ("timer", "Focus Timer")):
             action = menu.addAction(label)
             action.setCheckable(True)
             action.setChecked(bool(STORE.data["widgets"][key].get("enabled", True)))
@@ -5596,6 +6394,9 @@ class WidgetManager(QObject):
             "goal": QRect(area.left() + margin + news_w + gap, y + 217, 420, 215),
             "calendar": QRect(area.left() + margin + news_w + gap + 432, y, 380, 340),
             "quotes": QRect(area.left() + margin + news_w + gap + 432, y + 352, 230, 105),
+            "weather": QRect(area.left() + margin, y + news_h + gap, 370, 210),
+            "notes": QRect(area.left() + margin + news_w + gap, y + 444, 380, 320),
+            "timer": QRect(area.left() + margin + news_w + gap + 392, y + 444, 380, 240),
         }
         # On smaller displays, use a cascading layout that always remains reachable.
         if area.width() < 1200 or defaults["cpu"].bottom() > area.bottom() - margin:
@@ -5638,6 +6439,12 @@ class WidgetManager(QObject):
             widget = QuoteWidget(self, key)
         elif key == "news":
             widget = NewsWidget(self, key)
+        elif key == "weather":
+            widget = WeatherWidget(self, key)
+        elif key == "notes":
+            widget = NotesWidget(self, key)
+        elif key == "timer":
+            widget = TimerWidget(self, key)
         else:
             return None
         self.widgets[key] = widget
@@ -5676,7 +6483,13 @@ class WidgetManager(QObject):
         if not clocks:
             self.clock_timer.stop();return
         if any(bool(widget.config.get("show_seconds",True)) for widget in clocks):interval=1000
-        else:interval=10000 if performance_mode()=="eco" else (2000 if performance_mode()=="responsive" else 5000)
+        else:
+            if performance_mode()=="eco": interval=10000
+            elif performance_mode()=="responsive": interval=2000
+            else: interval=5000
+        # Reduce wake-ups further when compact mode enabled
+        if STORE.data.get("appearance",{}).get("compact_mode", False) and interval < 5000:
+            interval = max(interval, 2000)
         if self.clock_timer.interval()!=interval or not self.clock_timer.isActive():self.clock_timer.start(interval)
 
     def tick_clocks(self) -> None:
@@ -5715,6 +6528,9 @@ class WidgetManager(QObject):
                 if isinstance(widget, GoalCountdownWidget): widget.image.accent = widget.accent
                 if isinstance(widget, CalendarWidget): widget.grid.accent = widget.accent
                 if isinstance(widget, NewsWidget): widget.slide.accent = widget.accent; widget.slide.image.accent = widget.accent
+                if isinstance(widget, WeatherWidget): widget.apply_weather_style(); widget.apply_icons()
+                if isinstance(widget, NotesWidget): widget.apply_notes_style(); widget.apply_icons()
+                if isinstance(widget, TimerWidget): widget.apply_timer_style(); widget.apply_icons()
                 desired_top = bool(cfg.get("always_top", False))
                 if bool(widget.windowFlags() & Qt.WindowType.WindowStaysOnTopHint) != desired_top:
                     widget.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, desired_top); widget.show()
@@ -5739,6 +6555,12 @@ class WidgetManager(QObject):
                 elif isinstance(widget, NewsWidget):
                     widget.apply_news_style(); widget.restart_timer(); widget.restart_slider()
                     widget.ensure_nearby_images(); widget.refresh()
+                elif isinstance(widget, WeatherWidget):
+                    widget.apply_weather_style(); widget.reload_config()
+                elif isinstance(widget, NotesWidget):
+                    widget.apply_notes_style(); widget.reload_config()
+                elif isinstance(widget, TimerWidget):
+                    widget.apply_timer_style(); widget.reload_config()
                 widget.update()
             elif key == "cpu" and cfg.get("alerts_enabled", False):
                 widget = self.ensure_widget("cpu")
@@ -5790,9 +6612,13 @@ def converter_package_self_test(folder: str | Path) -> int:
         import imageio_ffmpeg
         video=root/"converter-test.mp4";ffmpeg=imageio_ffmpeg.get_ffmpeg_exe();flags=subprocess.CREATE_NO_WINDOW if IS_WINDOWS and hasattr(subprocess,"CREATE_NO_WINDOW") else 0
         subprocess.run([ffmpeg,"-hide_banner","-loglevel","error","-y","-f","lavfi","-i","color=c=blue:s=160x90:d=0.4","-c:v","libx264","-pix_fmt","yuv420p",str(video)],check=True,creationflags=flags)
-        outputs=(convert_file(image,"jpg"),convert_file(image,"avif"),convert_file(image,"heic"),convert_file(image,"jp2"),convert_file(text,"pdf"),convert_file(text,"docx"),convert_file(text,"odt"),convert_file(text,"epub"),convert_file(table,"xlsx"),convert_file(table,"json"),convert_file(table,"yaml"),convert_file(table,"ods"),convert_file(audio,"mp3"),convert_file(audio,"opus"),convert_file(audio,"aiff"),convert_file(video,"webm"),convert_file(video,"ts"))
+        code_py=root/"converter-test.py";code_py.write_text("def hello():\n    print('OS Widgets 1.4.0')\n",encoding="utf-8")
+        code_js=root/"converter-test.js";code_js.write_text("function hello(){ console.log('OS Widgets'); }\n",encoding="utf-8")
+        code_json=root/"converter-test.json";code_json.write_text('{"name":"OS Widgets","version":"1.4.0"}',encoding="utf-8")
+        code_ipynb=root/"converter-test.ipynb";code_ipynb.write_text('{"cells":[{"cell_type":"code","source":["print(\"hi\")"]}],"metadata":{},"nbformat":4,"nbformat_minor":5}',encoding="utf-8")
+        outputs=(convert_file(image,"jpg"),convert_file(image,"avif"),convert_file(image,"heic"),convert_file(image,"jp2"),convert_file(text,"pdf"),convert_file(text,"docx"),convert_file(text,"odt"),convert_file(text,"epub"),convert_file(table,"xlsx"),convert_file(table,"json"),convert_file(table,"yaml"),convert_file(table,"ods"),convert_file(audio,"mp3"),convert_file(audio,"opus"),convert_file(audio,"aiff"),convert_file(video,"webm"),convert_file(video,"ts"),convert_file(code_py,"md"),convert_file(code_py,"html"),convert_file(code_py,"ipynb"),convert_file(code_js,"txt"),convert_file(code_json,"md"),convert_file(code_ipynb,"py"))
         format_count=len({target for extension in CONVERTER_SOURCE_EXTENSIONS for target in converter_targets_for(extension)})
-        return 0 if len(CONVERTER_SOURCE_EXTENSIONS)>=70 and format_count>=40 and all(path.exists() and path.stat().st_size>0 for path in outputs) else 41
+        return 0 if len(CONVERTER_SOURCE_EXTENSIONS)>=100 and format_count>=50 and all(path.exists() and path.stat().st_size>0 for path in outputs) else 41
     except Exception:
         return 42
 
@@ -5800,13 +6626,13 @@ def converter_package_self_test(folder: str | Path) -> int:
 def package_self_test(expect_defaults: bool = False) -> int:
     """Small, non-interactive check used by the Windows packaging workflow."""
     try:
-        if APP_VERSION != "1.4.0-dev" or SETTINGS_SCHEMA_VERSION != 2:
+        if APP_VERSION != "1.4.0" or SETTINGS_SCHEMA_VERSION != 2:
             return 20
         if expect_defaults:
             defaults = default_settings()
             if STORE.data.get("version") != SETTINGS_SCHEMA_VERSION:
                 return 21
-            for key in ("music", "goal", "calendar", "quotes"):
+            for key in ("music", "goal", "calendar", "quotes", "weather", "notes", "timer"):
                 if STORE.data["widgets"][key].get("enabled") != defaults["widgets"][key]["enabled"]:
                     return 22
             if any(STORE.data["widgets"][key].get("geometry") is not None for key in STORE.data["widgets"]):

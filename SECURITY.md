@@ -2,27 +2,34 @@
 
 ## Supported versions
 
-Security fixes are applied to the latest stable release.
-
 | Version | Supported |
 |---|---|
-| 1.3.x | Yes |
-| 1.2.x and older | No |
+| 1.4.0 | ✅ |
+| 1.3.0 | ✅ |
+| 1.2.0 | ✅ |
+| <1.2.0 | ❌ |
 
 ## Reporting a vulnerability
 
-Do not post sensitive vulnerability details in a public issue. Contact the repository owner through GitHub with:
+If you find a security issue (e.g., unsafe file handling, registry injection, network request issue):
 
-- A description of the issue
-- Reproduction steps
-- Affected Windows and Python versions
-- Logs with personal data removed
-- Expected impact
+1. **Do not** open a public issue.
+2. Email: **security@comet-suite.example** (or open a private security advisory on GitHub).
+3. Include: OS Widgets version, Windows version, reproduction steps, impact.
 
-Please allow time for investigation before public disclosure.
+We aim to acknowledge within 72 hours and release a fix within 14 days for critical issues.
 
-## Download integrity
+## Security design
 
-Windows releases include `SHA256SUMS.txt`. Download packages only from this repository and verify the relevant checksum before running them.
+- No elevated privileges — installer uses `PrivilegesRequired=lowest`
+- File converter writes only beside source, never overwrites without `-converted` suffix
+- Context menu uses `HKEY_CURRENT_USER` (per-user) and `CommandStore` shared commands
+- Network: only News RSS/image and Weather wttr.in — both use HTTPS, timeouts, size caps
+- Image cache: capped 50 files / 32 MB, LRU pruning, no executable content
+- No auto-update, no remote code execution, no telemetry
 
-The current executables are not Authenticode-signed, so Microsoft Defender SmartScreen may show a reputation warning.
+## SmartScreen & signing
+
+Builds support Authenticode signing via GitHub Secrets. Unsigned builds are expected to trigger SmartScreen until reputation builds. Always verify `SHA256SUMS.txt`.
+
+See [docs/CODE_SIGNING.md](docs/CODE_SIGNING.md).

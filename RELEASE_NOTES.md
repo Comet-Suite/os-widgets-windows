@@ -1,41 +1,80 @@
-# OS Widgets 1.3.0
+# OS Widgets 1.4.0 — Final stable
 
-This release adds an optional Windows Explorer file converter while keeping the desktop widgets and previous 1.2.0 release available.
+OS Widgets 1.4.0 is the final polished release — lighter, more customizable, and now with code conversion and 3 new useful widgets.
 
 ## Downloads
 
-- `OS-Widgets-1.3.0-Windows-x64-Setup.exe`
-- `OS-Widgets-1.3.0-Windows-x64-Portable.zip`
-- `SHA256SUMS.txt`
+- `OS-Widgets-1.4.0-Windows-x64-Setup.exe` — per-user installer
+- `OS-Widgets-1.4.0-Windows-x64-Portable.zip` — portable
+- `SHA256SUMS.txt` — checksums
 
-## File Converter
+Verify SHA-256 before running. Unsigned builds may trigger SmartScreen → More info → Run anyway after verification.
 
-Enable it from **Settings → File Converter**. Supported file extensions receive an **OS Widgets** submenu in Windows Explorer with only the valid output formats for that source type. Converted files are saved in the source folder with collision-safe names.
+## What's new
 
-![File Converter settings](https://raw.githubusercontent.com/Comet-Suite/os-widgets-windows/main/docs/screenshots/file-converter-settings.png)
+### Code Converter — 35+ languages
+**100+ source extensions, 60+ output formats**
 
-![Format-aware context submenu](https://raw.githubusercontent.com/Comet-Suite/os-widgets-windows/main/docs/screenshots/context-menu-preview.png)
+- Python, JavaScript/TypeScript, Java, C/C++, C#, Go, Rust, PHP, Ruby, Swift, CSS/SCSS, SQL, Shell, PowerShell, Jupyter and more
+- Convert any code file to TXT, Markdown (fenced), HTML (styled), PDF, DOCX, RTF, ODT, EPUB, PY, JS, IPYNB, JSON
+- `notebook.ipynb ↔ script.py` — extract cells / create notebook
+- JSON pretty/minify, JS/CSS minify in Fast mode, same-extension formatting
+- Example: right-click `app.py` → OS Widgets → Convert to Markdown / HTML / Jupyter notebook
 
-### Included formats
+### New widgets
 
-- Images: PNG, JPEG, WebP, BMP, TIFF, GIF, ICO, PDF
-- Documents: TXT, Markdown, HTML, DOCX, PDF, PPTX text extraction
-- Tables: CSV, JSON, XLSX, PDF
-- Audio: MP3, WAV, FLAC, OGG, M4A
-- Video: MP4, MKV, AVI, MOV, WebM, MP3, WAV
+- **Weather** — city search, °C/°F, condition icons (cloud-sun, rain, snow...), humidity/wind, 30-min refresh, offline "You're not connected"
+- **Quick Notes** — sticky notes, auto-save 0.8s, title edit, font size, char/word count, 10k limit
+- **Focus Timer** — Pomodoro 25/5/15, cycles, auto-start toggles, progress bar, cycle dots, beep on completion
 
-Media conversion uses the FFmpeg binary bundled through imageio-ffmpeg. Office conversions preserve document content but may simplify advanced layouts.
+All disabled by default — no cost until enabled.
 
-## Other changes
+### Lighter & faster
 
-- Added File Converter status and dependency checks to Diagnostics
-- Added automatic cleanup of Explorer menu entries during uninstall
-- Added a dedicated conversion progress window and Open folder action
-- Added collision-safe output naming; source files are never overwritten
-- Converter libraries load only when a conversion is requested
+- News cache 80→50 files, 48→32 MB, refresh 15→30 min
+- Quotes 5→15 min, CPU history 60→40 Eco / 80 Responsive
+- Clock without seconds: 5s Balanced, 10s Eco
+- Desktop maintenance: 6s Balanced, 12s Eco (single shared timer)
+- Converter engines lazy-loaded, compact mode, border toggle, font scale 90-130%
+- GraphWidget adaptive, QPixmapCache, VeryCoarseTimer where possible
 
-## Verification
+### More customization
 
-The Windows workflow builds the executable, verifies the clean installer state, performs real packaged image/document/table/audio conversions, registers and removes the Explorer submenu in a self-test, builds the installer and portable archive, and publishes SHA-256 checksums.
+- Font scale, compact mode, widget border toggle, reduce-motion-on-battery
+- Per-widget accent still via custom widget colors, plus square/soft/rounded corners, 4 size presets, opacity
+- Settings nav now 15 pages with Weather/Notes/Timer
 
-The executables are not Authenticode-signed. Windows SmartScreen may display a reputation warning; verify the release checksum before running a download.
+### Fixes & polish
+
+- Disk: native `GetDiskFreeSpaceExW` + volume GUID dedup, matches Explorer, one-decimal %
+- CPU: `GetSystemTimes` deltas with burst guard, GPU PDH busiest-engine
+- Icons: embedded fallback vectors — no Font Awesome font dependency
+- Shadows removed, UTC offset hidden, DPI-aware per-monitor V2, clean installer reset validated for new widgets
+
+## File Converter matrix
+
+| Family | Formats |
+|---|---|
+| Images | PNG, JPEG, WebP, AVIF, HEIC, JPEG 2000, BMP, TIFF, GIF, ICO, TGA, PCX, PPM, PGM, PBM, DDS, PDF |
+| Documents | TXT, MD, HTML, DOCX, PDF, RTF, ODT, EPUB, PPTX text extraction |
+| Data | CSV, JSON, XLSX, XML, YAML, TOML, ODS, PDF |
+| Code | PY, JS, TS, JAVA, C, CPP, CS, GO, RS, PHP, RB, SWIFT, CSS, IPYNB, JSON, SH, PS1, SQL + 30 more → TXT/MD/HTML/PDF/DOCX/JS/PY/IPYNB/JSON |
+| Audio | MP3, WAV, FLAC, OGG, M4A, Opus, AIFF, AC-3, WMA |
+| Video | MP4, MKV, AVI, MOV, WebM, MPEG, FLV, OGV, 3GP, TS + MP3/WAV |
+
+Quality: Fast (lower CPU, minified), Balanced, High.
+
+## Build & verification
+
+Workflow validates: clean installer state (no inherited geometries, music/goal/calendar/quotes/weather/notes/timer disabled), Windows volume APIs, 100+ extensions registration via shared CommandStore (177 keys), image+code+doc+table+audio+video conversions, context-menu self-test, Authenticode diagnostics.
+
+See `docs/CODE_SIGNING.md` for trusted signing.
+
+## Previous releases
+
+- v1.3.0 — file converter (images/docs/tables/audio/video)
+- v1.2.0 — first stable widgets release
+
+---
+
+Full changelog: [CHANGELOG.md](https://github.com/Comet-Suite/os-widgets-windows/blob/main/CHANGELOG.md)

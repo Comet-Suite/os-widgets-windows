@@ -3,11 +3,11 @@ VSVersionInfo(
   kids=[StringFileInfo([StringTable('040904B0', [
     StringStruct('CompanyName', 'Comet Suite'),
     StringStruct('FileDescription', 'OS Widgets — Your desktop. Your widgets.'),
-    StringStruct('FileVersion', '1.4.0-dev'),
+    StringStruct('FileVersion', '1.4.0'),
     StringStruct('InternalName', 'OS-Widgets'),
     StringStruct('LegalCopyright', 'Copyright © 2026 Comet Suite'),
     StringStruct('OriginalFilename', 'OS-Widgets.exe'),
     StringStruct('ProductName', 'OS Widgets'),
-    StringStruct('ProductVersion', '1.4.0-dev')
+    StringStruct('ProductVersion', '1.4.0')
   ])]), VarFileInfo([VarStruct('Translation', [1033, 1200])])]
 )

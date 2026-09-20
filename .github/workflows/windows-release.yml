@@ -56,7 +56,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $assets = Get-ChildItem release -File | ForEach-Object { $_.FullName }
+          $title = "OS Widgets ${{ github.ref_name }}"
           gh release create "${{ github.ref_name }}" $assets `
-            --title "OS Widgets 1.4.0-dev" `
+            --title "$title" `
             --notes-file RELEASE_NOTES.md `
             --verify-tag
