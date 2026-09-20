@@ -1,6 +1,7 @@
 $ErrorActionPreference = "Stop"
 $PSNativeCommandUseErrorActionPreference = $true
-$Version = "1.4.0 FINAL"
+$Version = "1.4.0"
+$DisplayVersion = "1.4.0 FINAL"
 $Contact = "m39776401@gmail.com"
 $Root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 Set-Location $Root
@@ -77,7 +78,7 @@ New-Item $Release,$Portable -ItemType Directory -Force | Out-Null
 Copy-Item "dist/OS-Widgets.exe" $Portable
 Copy-Item "motivational-quotes.txt","README.md","THIRD_PARTY_NOTICES.md" $Portable
 @"
-OS Widgets $Version — Windows x64 Portable
+OS Widgets $DisplayVersion — Windows x64 Portable
 Contact: $Contact
 
 1. Extract every file from this ZIP.
@@ -87,6 +88,7 @@ Contact: $Contact
 
 The executable is currently unsigned. Windows may display a reputation warning.
 Contact: $Contact for support.
+Version: $DisplayVersion
 "@ | Set-Content (Join-Path $Portable "START-HERE.txt") -Encoding UTF8
 Compress-Archive -Path "$Portable/*" -DestinationPath "$Release/OS-Widgets-$Version-Windows-x64-Portable.zip" -CompressionLevel Optimal -Force
 
